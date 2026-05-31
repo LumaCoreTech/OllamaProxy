@@ -1,0 +1,130 @@
+# ===================================================
+# Root configuration
+# ===================================================
+root = true
+
+# ===================================================
+# Universal editor settings
+# ===================================================
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+tab_width = 4
+
+# ===================================================
+# Markdown files: preserve trailing spaces
+# ===================================================
+[*.md]
+trim_trailing_whitespace = false
+
+# ===================================================
+# Windows scripts use CRLF
+# ===================================================
+[*.{bat,cmd,ps1,psm1,psd1}]
+end_of_line = crlf
+
+# ===================================================
+# File-type specific overrides
+# ===================================================
+[*.{json,jsonc,yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[docs/api/*.json]
+max_line_length = off
+
+[*.{js,ts}]
+quote_type = single
+
+[*.{cs,csproj,vb,vbproj,fs,fsi,fsx,fsproj,props,targets,razor,cshtml}]
+indent_style = tab
+indent_size = 4
+tab_width = 4
+max_line_length = 120
+
+[*.{html,xml,xaml,js,css,sql,resx}]
+indent_style = space
+indent_size = 4
+tab_width = 4
+insert_final_newline = true
+
+# ===================================================
+# Test projects: xUnit v3 analyzer adjustments
+# ===================================================
+[{src/*.Tests/*.cs,src/*.Tests/**/*.cs}]
+# xUnit1051: "Use TestContext.Current.CancellationToken for responsive test cancellation."
+# Downgraded to suggestion because many tests intentionally control their CancellationToken
+# (e.g., cancellation-behavior tests, timeout tests). The global safety net in
+# xunit.runner.json (longRunningTestSeconds: 10) already catches runaway tests.
+dotnet_diagnostic.xUnit1051.severity = suggestion
+
+# xUnit2013: "Do not use equality check to check for collection size."
+# Downgraded to suggestion because Assert.Equal(expectedCount, collection.Count) is
+# preferred when tests verify a specific count alongside full element assertions —
+# Assert.Single() only covers count == 1 and loses the explicit count context.
+dotnet_diagnostic.xUnit2013.severity = suggestion
+
+# CA1707: "Identifiers should not contain underscores."
+# Disabled for test projects: the Method_Scenario_Expectation naming pattern is
+# the de-facto xUnit standard and intentionally uses underscores for readability
+# in test runners.
+dotnet_diagnostic.CA1707.severity = none
+
+# CA2263: "Prefer the generic overload."
+# Tests for non-generic API surface (e.g. Register(string, Type)) intentionally
+# call the non-generic overload to validate its behavior; flagging that is
+# noise rather than signal.
+dotnet_diagnostic.CA2263.severity = none
+
+#### .NET code style ####
+
+# # Organize usings
+# dotnet_sort_system_directives_first = true
+# dotnet_separate_import_directive_groups = false
+# csharp_using_directive_placement = outside_namespace:warning
+
+# # File-scoped namespaces (modern, less indentation)
+# csharp_style_namespace_declarations = file_scoped:warning
+
+# # this. preferences — prefer omitting, rely on naming
+# dotnet_style_qualification_for_field = false:warning
+# dotnet_style_qualification_for_property = false:warning
+# dotnet_style_qualification_for_method = false:warning
+# dotnet_style_qualification_for_event = false:warning
+
+# # Language keywords vs BCL types
+# dotnet_style_predefined_type_for_locals_parameters_members = true:warning
+# dotnet_style_predefined_type_for_member_access = true:warning
+
+# # Modern language features
+# csharp_style_var_for_built_in_types = false:suggestion
+# csharp_style_var_when_type_is_apparent = true:suggestion
+# csharp_style_var_elsewhere = false:suggestion
+# csharp_prefer_braces = true:warning
+# csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+# csharp_style_expression_bodied_properties = true:suggestion
+# csharp_style_pattern_matching_over_is_with_cast_check = true:warning
+# csharp_style_pattern_matching_over_as_with_null_check = true:warning
+# dotnet_style_object_initializer = true:suggestion
+# dotnet_style_collection_initializer = true:suggestion
+# dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
+# csharp_prefer_simple_using_statement = true:suggestion
+
+# # Null-checking preferences
+# csharp_style_throw_expression = true:suggestion
+# csharp_style_conditional_delegate_call = true:suggestion
+
+# # Naming: async methods, private fields with _camelCase
+# dotnet_naming_rule.private_fields_underscore.severity = warning
+# dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+# dotnet_naming_rule.private_fields_underscore.style = underscore_prefix
+
+# dotnet_naming_symbols.private_fields.applicable_kinds = field
+# dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+# dotnet_naming_style.underscore_prefix.capitalization = camel_case
+# dotnet_naming_style.underscore_prefix.required_prefix = _
