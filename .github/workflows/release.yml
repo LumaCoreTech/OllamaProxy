@@ -1,0 +1,116 @@
+name: Release
+
+# ============================================================================
+# Triggered by version tags (e.g. v1.0.0). Builds and tests the solution,
+# then publishes a multi-arch container image to the GitHub Container Registry
+# (GHCR) and creates a GitHub Release with auto-generated notes.
+#
+# No secrets beyond the automatically-provided GITHUB_TOKEN are required —
+# GHCR authentication uses that token.
+# ============================================================================
+
+on:
+  push:
+    tags:
+      - 'v*'  # e.g. v1.0.0, v1.2.3
+
+permissions:
+  contents: write   # create GitHub Releases
+  packages: write   # push container image to GHCR
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  release:
+    name: Build, Test & Publish
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0  # full history for release notes
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    # ------------------------------------------------------------------------
+    # Verify the build is green before we publish anything.
+    # ------------------------------------------------------------------------
+    - name: Restore
+      run: dotnet restore OllamaProxy.slnx
+
+    - name: Build
+      run: dotnet build OllamaProxy.slnx -c Release --no-restore
+
+    - name: Test
+      run: dotnet test OllamaProxy.slnx -c Release --no-build --verbosity normal
+
+    # ------------------------------------------------------------------------
+    # Extract the version from the tag (strip the leading 'v').
+    # ------------------------------------------------------------------------
+    - name: Get Version from Tag
+      id: get_version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Release version: $VERSION"
+
+    # ------------------------------------------------------------------------
+    # Build and push the container image to GHCR.
+    # ------------------------------------------------------------------------
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract image metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest
+
+    - name: Build and push image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ./Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # ------------------------------------------------------------------------
+    # Create the GitHub Release.
+    # ------------------------------------------------------------------------
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v3
+      with:
+        name: Release ${{ steps.get_version.outputs.VERSION }}
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Release Summary
+      run: |
+        echo "✅ Release ${{ steps.get_version.outputs.VERSION }} published successfully!"
+        echo ""
+        echo "🐳 Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}"
+        echo "🚀 GitHub Release: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.get_version.outputs.VERSION }}"

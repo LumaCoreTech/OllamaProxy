@@ -1,0 +1,258 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+# Serialize badge pushes against any other run touching the 'badges' branch.
+# Never cancel: every run carries fresh badge data we don't want to drop.
+concurrency:
+  group: badge-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & Test (${{ matrix.slug }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            slug: ubuntu
+          - os: windows-latest
+            slug: windows
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Restore
+      run: dotnet restore OllamaProxy.slnx
+
+    - name: Build
+      run: dotnet build OllamaProxy.slnx -c Release --no-restore
+
+    - name: Test
+      run: >-
+        dotnet test OllamaProxy.slnx -c Release --no-build --verbosity normal
+        --logger "trx;LogFileName=test-results.trx"
+        --collect:"XPlat Code Coverage"
+        --results-directory ./artifacts/test-results
+
+    - name: Test Report
+      uses: dorny/test-reporter@v3
+      if: always()
+      with:
+        name: Test Results (${{ matrix.slug }})
+        path: '**/test-results.trx'
+        reporter: dotnet-trx
+        fail-on-error: true
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Badge generation (main branch only). Each matrix leg produces its own
+    # test + coverage badge JSON, uploaded as a per-OS artifact for the
+    # badge-update workflow to publish to the 'badges' branch.
+    # ────────────────────────────────────────────────────────────────────────
+    # Each generation step ALWAYS writes a badge file — including a red failure
+    # badge when the build/test phase blew up — and never aborts the run. This
+    # guarantees the downstream badge-update workflow has fresh data to publish,
+    # so the README reflects a broken build instead of silently keeping the last
+    # green badge. continue-on-error is a belt-and-braces guard against an
+    # unexpected scripting fault still leaving the upload step with a file.
+    - name: Generate Test Badge
+      if: github.ref == 'refs/heads/main' && always()
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        # Aggregate counters across every TRX file produced by the run.
+        $trxFiles = Get-ChildItem -Path . -Filter "test-results.trx" -Recurse -ErrorAction SilentlyContinue
+        $total = 0
+        $passed = 0
+        foreach ($f in $trxFiles) {
+          try {
+            [xml]$trx = Get-Content $f.FullName
+            $total  += [int]$trx.TestRun.ResultSummary.Counters.total
+            $passed += [int]$trx.TestRun.ResultSummary.Counters.passed
+          } catch {
+            Write-Host "::warning::Failed to parse $($f.FullName): $_"
+          }
+        }
+
+        if ($total -gt 0) {
+          # total-minus-passed counts both assertion failures and fixture errors,
+          # so the badge never stays green when something blows up in setup.
+          $notPassed = $total - $passed
+          $color = if ($notPassed -eq 0) { "brightgreen" } elseif ($notPassed -lt 3) { "yellow" } else { "red" }
+          $message = "$passed/$total passed"
+        } else {
+          # No TRX at all → restore/build failed before any test executed.
+          $color = "red"
+          $message = "build failed"
+        }
+
+        $badge = @{
+          schemaVersion = 1
+          label   = "tests"
+          message = $message
+          color   = $color
+        } | ConvertTo-Json -Compress
+        New-Item -ItemType Directory -Force -Path badge-data | Out-Null
+        $badge | Out-File -Encoding ascii "badge-data/ollamaproxy-${{ matrix.slug }}-test-badge.json"
+        Write-Host "Test badge: $message ($color)"
+
+    - name: Generate Coverage Badge
+      if: github.ref == 'refs/heads/main' && always()
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        $lineCoverage = 0
+        $branchCoverage = 0
+        $hasBranch = $false
+        $haveCoverage = $false
+
+        # Only run reportgenerator when coverage actually exists; a failed build
+        # produces no cobertura file and must not abort badge generation.
+        $coverageFiles = Get-ChildItem -Path . -Filter "coverage.cobertura.xml" -Recurse -ErrorAction SilentlyContinue
+        if ($coverageFiles) {
+          dotnet tool install -g dotnet-reportgenerator-globaltool 2>&1 | Write-Host
+          reportgenerator -reports:"**/coverage.cobertura.xml" -targetdir:"coveragereport" -reporttypes:TextSummary 2>&1 | Write-Host
+
+          if (Test-Path "coveragereport/Summary.txt") {
+            $summary = Get-Content "coveragereport/Summary.txt" | Out-String
+            if ($summary -match "Line coverage: (\d+\.?\d*)%") {
+              $lineCoverage = [math]::Round([double]$matches[1])
+              $haveCoverage = $true
+            }
+            if ($summary -match "Branch coverage: (\d+\.?\d*)%") {
+              $branchCoverage = [math]::Round([double]$matches[1])
+              $hasBranch = $true
+            }
+          }
+        }
+
+        if ($haveCoverage) {
+          $color = if ($lineCoverage -ge 90) { "brightgreen" } elseif ($lineCoverage -ge 75) { "yellow" } else { "red" }
+          $message = if ($hasBranch) { "L: $lineCoverage% | B: $branchCoverage%" } else { "$lineCoverage%" }
+        } else {
+          # Build/test failed before coverage was collected.
+          $color = "red"
+          $message = "unavailable"
+        }
+
+        $badge = @{
+          schemaVersion = 1
+          label   = "coverage"
+          message = $message
+          color   = $color
+        } | ConvertTo-Json -Compress
+        New-Item -ItemType Directory -Force -Path badge-data | Out-Null
+        $badge | Out-File -Encoding ascii "badge-data/ollamaproxy-${{ matrix.slug }}-coverage-badge.json"
+        Write-Host "Coverage badge: $message ($color)"
+
+    - name: Upload Badge Data
+      if: github.ref == 'refs/heads/main' && always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: badge-data-${{ matrix.slug }}
+        path: badge-data/ollamaproxy-*-badge.json
+        retention-days: 1
+        if-no-files-found: warn
+
+    - name: Upload Coverage Artifact
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: coverage-${{ matrix.slug }}
+        path: '**/coverage.cobertura.xml'
+        retention-days: 3
+        if-no-files-found: warn
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Publish badges from within the same workflow run by pushing them to
+  # the orphan 'badges' branch. `needs: build` + `if: always()` means it runs
+  # even when the build legs fail, so the red failure badges still get published.
+  publish-badges:
+    name: Publish Badges
+    needs: build
+    if: github.ref == 'refs/heads/main' && always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push to the orphan 'badges' branch
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Download Badge Data
+      uses: actions/download-artifact@v8
+      with:
+        pattern: badge-data-*
+        merge-multiple: true
+        path: badge-data
+      continue-on-error: true
+
+    - name: Commit and push badge updates
+      run: |
+        set -euo pipefail
+
+        if [ ! -d badge-data ] || ! ls badge-data/ollamaproxy-*-badge.json >/dev/null 2>&1; then
+          echo "⚠️ No badge data found — skipping."
+          exit 0
+        fi
+
+        git config user.name  "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        # Check out the 'badges' branch, creating it as an empty orphan on first run.
+        if git ls-remote --exit-code --heads origin badges >/dev/null 2>&1; then
+          git fetch origin badges
+          git checkout badges
+        else
+          echo "ℹ️ 'badges' branch does not exist yet — creating it."
+          git checkout --orphan badges
+          git rm -rf . >/dev/null 2>&1 || true
+        fi
+
+        for badge_file in badge-data/ollamaproxy-*-badge.json; do
+          name=$(basename "$badge_file")
+          echo "📊 $name: $(cat "$badge_file")"
+          cp "$badge_file" "./$name"
+        done
+
+        rm -rf badge-data
+
+        git add ollamaproxy-*-badge.json
+
+        if git diff --cached --quiet; then
+          echo "✅ No badge changes — nothing to commit."
+          exit 0
+        fi
+
+        git commit -m "chore(badges): Update CI badges [skip ci]"
+
+        # Retry with rebase in case a concurrent run slipped through the gate.
+        for attempt in 1 2 3 4 5; do
+          if git push origin badges; then
+            echo "✅ Badges pushed (attempt ${attempt})."
+            exit 0
+          fi
+          echo "⚠️ Push failed on attempt ${attempt} — rebasing and retrying."
+          git pull --rebase origin badges || true
+        done
+
+        echo "❌ Failed to push badge updates after 5 attempts."
+        exit 1
