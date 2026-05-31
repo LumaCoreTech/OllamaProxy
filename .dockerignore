@@ -1,0 +1,25 @@
+# Build artifacts — rebuilt inside the image, never copy host output in.
+**/bin/
+**/obj/
+
+# Generated effective configuration may contain resolved secrets; keep it out.
+**/appsettings.generated.json
+
+# Local development overrides.
+**/appsettings.Development.json
+
+# Version control and IDE metadata.
+.git/
+.gitignore
+.github/
+.vs/
+.vscode/
+**/*.user
+
+# Documentation and CI files that are irrelevant to the runtime image.
+README.md
+THIRD-PARTY-NOTICES.md
+LICENSE
+docker-compose.yml
+.dockerignore
+Dockerfile

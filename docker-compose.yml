@@ -1,0 +1,41 @@
+# ---------------------------------------------------------------------------
+# Sample Compose file for running OllamaProxy.
+#
+# Secrets are passed via environment variables (see .env.example). Copy that
+# file to .env and fill in your key — Compose loads it automatically.
+#
+#   cp .env.example .env       # then edit .env
+#   docker compose up --build
+#
+# The proxy then speaks Ollama on http://localhost:11434, so existing Ollama
+# clients work without reconfiguration.
+# ---------------------------------------------------------------------------
+services:
+  ollamaproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ollamaproxy:latest
+    container_name: ollamaproxy
+    restart: unless-stopped
+    ports:
+      # Expose the proxy on the conventional Ollama port on the host.
+      - "11434:11434"
+    environment:
+      # --- Operating mode -------------------------------------------------
+      OllamaProxy__Mode: "PlugAndPlay"
+
+      # --- Backend: target an OpenAI-compatible API -----------------------
+      OllamaProxy__Backends__default__BaseUrl: "https://api.openai.com/v1"
+      OllamaProxy__Backends__default__ProviderType: "openai"
+      OllamaProxy__Backends__default__AutoExpose: "true"
+
+      # --- Secret: never bake this into the image -------------------------
+      # Resolved from the host environment / .env file (see below).
+      OllamaProxy__Backends__default__ApiKey: "${OPENAI_API_KEY:?Set OPENAI_API_KEY in your .env file}"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:11434/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
