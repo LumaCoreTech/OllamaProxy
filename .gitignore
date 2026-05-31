@@ -1,0 +1,59 @@
+## .NET build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+build/
+bld/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.userprefs
+.idea/
+*.DotSettings.user
+
+## Test / coverage results
+[Tt]est[Rr]esult*/
+coverage*.json
+coverage*.xml
+coverage*.info
+*.coverage
+*.coveragexml
+TestResults/
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!packages/build/
+
+## OllamaProxy: runtime-generated effective configuration
+# The proxy writes its fully-resolved configuration here on startup when
+# WriteEffectiveConfig is enabled. It may contain plaintext secrets (those that
+# came from appsettings, not from environment variables), so it must never be committed.
+appsettings.generated.json
+**/appsettings.generated.json
+
+## Local development overrides that may contain secrets
+appsettings.Local.json
+**/appsettings.Local.json
+secrets.json
+
+## Docker: local environment file with real secrets (.env.example is committed)
+.env
+
+## OS files
+.DS_Store
+Thumbs.db
+desktop.ini
