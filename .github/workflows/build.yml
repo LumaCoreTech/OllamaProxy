@@ -105,7 +105,7 @@ jobs:
 
         $badge = @{
           schemaVersion = 1
-          label   = "tests"
+          label   = "Tests"
           message = $message
           color   = $color
         } | ConvertTo-Json -Compress
@@ -154,7 +154,7 @@ jobs:
 
         $badge = @{
           schemaVersion = 1
-          label   = "coverage"
+          label   = "Coverage"
           message = $message
           color   = $color
         } | ConvertTo-Json -Compress

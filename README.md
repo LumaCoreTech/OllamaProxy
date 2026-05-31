@@ -1,10 +1,41 @@
 # OllamaProxy
 
-[![Build](https://img.shields.io/github/actions/workflow/status/LumaCoreTech/OllamaProxy/build.yml?branch=main&style=flat-square&label=Build)](https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml)
-[![Ubuntu Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-ubuntu-test-badge.json&style=flat-square)](https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml)
-[![Ubuntu Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-ubuntu-coverage-badge.json&style=flat-square)](https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml)
-[![Windows Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-windows-test-badge.json&style=flat-square)](https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml)
-[![Windows Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-windows-coverage-badge.json&style=flat-square)](https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml)
+<div align="center">
+  <div style="width: 550px;">
+    <table width="550">
+      <thead>
+        <tr>
+          <th align="center" width="150">Platform</th>
+          <th align="left">&nbsp;&nbsp;Build Status & Metrics</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td align="center"><b>Windows</b></td>
+          <td align="left">
+            &nbsp;&nbsp;
+            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/LumaCoreTech/OllamaProxy/build.yml?style=flat-square&label=Build" alt="Windows Build"></a>
+            &nbsp;
+            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-windows-test-badge.json&style=flat-square" alt="Windows Tests"></a>
+            &nbsp;
+            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-windows-coverage-badge.json&style=flat-square" alt="Windows Coverage"></a>
+          </td>
+        </tr>
+        <tr>
+          <td align="center"><b>Ubuntu</b></td>
+          <td align="left">
+            &nbsp;&nbsp;
+            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/LumaCoreTech/OllamaProxy/build.yml?style=flat-square&label=Build" alt="Ubuntu Build"></a>
+            &nbsp;
+            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-ubuntu-test-badge.json&style=flat-square" alt="Ubuntu Tests"></a>
+            &nbsp;
+            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-ubuntu-coverage-badge.json&style=flat-square" alt="Ubuntu Coverage"></a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 
 **Speak Ollama, run OpenAI.**
 
