@@ -45,7 +45,7 @@ forwarding and translating every request to one or more **OpenAI-compatible back
 
 It lets you point any Ollama-aware client — such as **GitHub Copilot Chat in Visual Studio** or
 **Continue.dev** — at cloud or local OpenAI-compatible models, with per-model routing so you can,
-for example, serve lightweight autocompletion from a local model and heavy chat from the cloud.
+for example, serve a lightweight local model and a heavy cloud model side by side and pick per task.
 
 > [!NOTE]
 > Built on **.NET 10** / ASP.NET Core Minimal API. Single self-contained service, configured via a
@@ -55,6 +55,7 @@ for example, serve lightweight autocompletion from a local model and heavy chat 
 
 ## Contents
 
+- [How it works](#how-it-works)
 - [Features](#features)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
@@ -73,29 +74,76 @@ for example, serve lightweight autocompletion from a local model and heavy chat 
 
 ---
 
+## How it works
+
+The whole proxy rests on one observation: **the Ollama API and the OpenAI API describe the same
+operations in two different dialects.** A chat request, a model listing, an embeddings call — each
+exists on both sides, just with different field names and a different streaming format. OllamaProxy
+sits in that gap and translates.
+
+A request makes the following trip:
+
+1. **A client speaks Ollama.** It connects to `http://localhost:11434` — Ollama's conventional
+   port — and calls a route like `POST /api/chat`, exactly as it would against a real Ollama install.
+2. **The proxy resolves the model.** The client-facing model name is looked up in the **catalog**
+   (more on that below) to find which **backend** serves it and under which upstream name.
+3. **The request is translated and forwarded.** The Ollama request becomes an OpenAI-compatible one
+   and is sent to the chosen backend with its own URL and key.
+4. **The response is translated back.** OpenAI's streaming SSE — including tool-call deltas — is
+   converted to Ollama's JSON-Lines on the fly, so the client sees a response indistinguishable from
+   native Ollama.
+
+Two ideas carry the rest of this document:
+
+- **One catalog.** At startup the proxy builds a single list of the models it offers, assembled from
+  the models you **pin** (the registry) and the models it **discovers** by asking each backend what it
+  serves. Everything in [Configuration](#configuration) is ultimately about shaping that catalog.
+- **Two surfaces, one port.** The same catalog is advertised through *both* a native Ollama API
+  (`/api/*`) and an OpenAI-compatible API (`/v1/*`) on the same port. A client uses whichever it
+  prefers — and some, like GitHub Copilot, use both at once (discovery over `/api`, chat over `/v1`).
+
+Keep those two ideas in mind and every configuration knob below has an obvious place to live.
+
+---
+
 ## Features
 
-- **Ollama-compatible endpoints:** `/api/chat`, `/api/generate`, `/api/tags`, `/api/show`,
-  `/api/embeddings`, `/api/embed`, `/api/version`, `/api/ps`, plus a `/health` liveness probe.
-- **Real-time streaming translation** between OpenAI SSE and Ollama JSON-Lines, including tool-call
-  deltas — so Copilot's tool/agent features light up.
-- **Multiple backends** with routing by model name (local + cloud side by side).
-- **Three operating modes** on the same machinery:
-  - **Plug-and-Play** — just a backend URL + key; models and capabilities are auto-discovered.
-  - **Hybrid** — explicit models plus auto-exposed extras.
-  - **Explicit** — a fully pinned registry for predictable production behavior.
-- **Capability detection** (tools / vision / completion) via backend metadata, optional active
-  probing, and a name-based heuristic — required for Copilot to enable tool calling.
-- **Effective-config export:** writes a fully resolved `appsettings.generated.json` on startup so
-  you can graduate from a two-line quick start to a pinned configuration without guesswork.
-- **Provider abstraction** so additional upstreams (e.g. Anthropic, Grok) can be added later
-  without touching the core.
+Most of these fall out of the translate-and-route model above; a few exist to make that model
+pleasant to operate in practice.
+
+- **A complete dual surface.** Both APIs are served in full, not just the chat route:
+  - **Ollama-native:** `/api/chat`, `/api/generate`, `/api/tags`, `/api/show`, `/api/embeddings`,
+    `/api/embed`, `/api/version`, `/api/ps`, plus a `/health` liveness probe.
+  - **OpenAI-compatible:** `/v1/models`, `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`.
+
+  Because both are present, OpenAI-native clients (including GitHub Copilot's chat path) connect
+  unchanged — there is no feature that only works through one dialect.
+- **Faithful streaming translation.** Responses are converted between OpenAI SSE and Ollama
+  JSON-Lines *as they stream*, token by token, so nothing buffers. Tool-call deltas are carried
+  across intact, which is what lets Copilot's tool and agent features light up.
+- **Many backends behind one endpoint.** Route by model name to send a lightweight local model and a
+  heavy cloud model side by side — the client only ever sees one Ollama URL and one flat model list.
+- **Three operating modes on the same machinery.** The same catalog builder powers a spectrum from
+  zero-config to fully pinned, so you can start loose and tighten later without changing tools:
+  - **Plug-and-Play** — just a backend URL and key; every model and capability is auto-discovered.
+  - **Hybrid** — pin the few models you care about, let the rest flow in automatically.
+  - **Explicit** — a fully pinned registry with no discovery, for reproducible production behavior.
+- **Capability detection that Copilot relies on.** Tools, vision, and completion support are resolved
+  from backend metadata, an optional active probe, and a name heuristic — the tool flag in particular
+  is what unlocks Copilot's agent mode.
+- **A graduation path, not a cliff.** Set one flag and the proxy writes a fully resolved
+  `appsettings.generated.json` on startup, turning a two-line quick start into a pinned configuration
+  you can review and adopt — no guesswork about what was discovered.
+- **Room to grow.** A provider abstraction keeps the translation core separate from each backend's
+  quirks, so new upstreams (e.g. Anthropic, Grok) can be added without touching the request path.
 
 ---
 
 ## Quick start
 
-You need the **.NET 10 SDK** and an API key for an OpenAI-compatible backend.
+The fastest path to the model above is Plug-and-Play: point the proxy at one backend, give it a key,
+and let it discover everything else. You need the **.NET 10 SDK** and an API key for an
+OpenAI-compatible backend.
 
 **1. Configure one backend.** Edit [`src/OllamaProxy/appsettings.json`](src/OllamaProxy/appsettings.json) —
 the shipped defaults already point at OpenAI in Plug-and-Play mode; you only need to supply a key
@@ -154,7 +202,10 @@ default port, most clients need no configuration at all.
 
 ## Configuration
 
-All settings live under the top-level **`OllamaProxy`** section. The shape is:
+Everything here exists to shape the **one catalog** the proxy advertises. All settings live under the
+top-level **`OllamaProxy`** section, and the four top-level keys map cleanly onto that job: `Mode` and
+`Models` decide *what goes into* the catalog, `Backends` defines *where the models come from*, and
+`WriteEffectiveConfig` lets you *snapshot the result*. The shape is:
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -165,16 +216,24 @@ All settings live under the top-level **`OllamaProxy`** section. The shape is:
 
 ### Operating modes
 
+The mode is the single biggest lever over the catalog, and the three values form a deliberate
+progression — from *"show me everything, I'll sort it out later"* to *"show me exactly what I
+listed, nothing else."* You can move along that line as a deployment matures without switching tools
+or rewriting your client config.
+
 A **registry entry** is one element of the `Models` array (see [Model registry](#model-registry)) — an
 explicit mapping of a client-facing model name to a backend and upstream model. The published catalog
 is always assembled the same way; the mode only decides whether (and which) **discovered** models are
 added on top of the registry:
 
-| Mode | Published models |
-| --- | --- |
-| **`PlugAndPlay`** | Every model each backend reports, with detected capabilities. Registry entries (if any) still take precedence. Zero-friction first run. |
-| **`Hybrid`** | Registry entries **plus** the discovered models of any backend with `AutoExpose: true`. |
-| **`Explicit`** | Only registry entries. No discovery runs at all — a fully pinned, reproducible surface. |
+| Mode | Published models | Reach for it when |
+| --- | --- | --- |
+| **`PlugAndPlay`** | Every model each backend reports, with detected capabilities. Registry entries (if any) still take precedence. | You're getting started, exploring a backend, or just want zero friction. |
+| **`Hybrid`** | Registry entries **plus** the discovered models of any backend with `AutoExpose: true`. | You want a few models pinned exactly right, but still enjoy auto-discovery for the rest. |
+| **`Explicit`** | Only registry entries. No discovery runs at all. | You're in production and want a fixed, reproducible surface that can't drift when a backend changes its listing. |
+
+The progression is also a trust gradient: `PlugAndPlay` trusts the backend's listing completely,
+`Explicit` trusts only your file, and `Hybrid` lets you draw that line per backend.
 
 #### How the catalog is merged
 
@@ -195,17 +254,46 @@ queried in the discovery pass depends on the mode:
 
 A backend that fails discovery is logged and skipped, so one unreachable backend never blocks startup.
 
+#### Name collisions
+
+Because the catalog is keyed by client-facing name, two backends that report the **same** model name
+cannot both be auto-exposed under it — the first one discovered wins, and the shadowed copy is logged
+as a warning and left unreachable under that name. There are two deterministic ways to keep both
+reachable:
+
+- **Pin distinct names** in the registry (`Models`), which always win over discovery.
+- **Set a `ModelPrefix`** on one or both backends, so their auto-exposed models are published as
+  `prefix/model` (for example `vllm/gemma4-31b` and `venice/gemma4-31b`).
+
+The prefix is **opt-in and deterministic**: it is applied whenever it is configured, regardless of
+whether a collision currently exists. This keeps published names stable — a model's client-facing
+name never changes just because another backend started or stopped advertising the same name.
+Single-backend deployments can leave `ModelPrefix` unset and keep the shorter, bare names.
+
 ### Backends
 
-Each entry in `Backends` is keyed by a **logical name** (used by the registry and for routing):
+A backend is one upstream OpenAI-compatible API the proxy can route to — its URL, its key, and a few
+knobs that shape how its models enter the catalog. Each entry in `Backends` is keyed by a **logical
+name** (used by the registry and for routing):
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `BaseUrl` | string | _(required)_ | Absolute URL of the backend's OpenAI-compatible API (e.g. `https://api.openai.com/v1`). |
-| `ProviderType` | string | `openai` | Selects the provider adapter. Currently `openai`. |
+| `ProviderType` | string | `openai` | Selects the provider adapter: `openai` (generic OpenAI-compatible default), `venice`, `vllm`, or `openrouter`. Specialized adapters differ only in how they encode reasoning. See [Reasoning effort](#reasoning-effort). |
 | `ApiKey` | string | _(required)_ | Bearer token. Min. 8 chars. Prefer an environment variable (see below). |
 | `AutoExpose` | bool | `false` | Expose every discovered model. Honored in `Hybrid`, implied in `PlugAndPlay`, ignored in `Explicit`. |
+| `ContextLength` | int? | _(auto)_ | Backend-scoped fallback for context window (tokens): applies to every model of this backend that has no individual `ContextLength` of its own, and acts as a ceiling that can only narrow a detected value. The effective window is still resolved **per model**. See [Context window](#context-window). |
+| `ModelPrefix` | string? | _(none)_ | Optional prefix applied to the client-facing name of every **auto-exposed** model of this backend, producing `prefix/model`. Disambiguates the same model served by multiple backends. Only auto-exposed models are prefixed — registry entries are exposed verbatim. The prefix changes only the published name; the unprefixed id is still requested upstream. Must be non-blank and contain no `/`. See [Name collisions](#name-collisions). |
+| `ReasoningEffort` | enum? | _(none)_ | Backend-scoped fallback for reasoning effort: used for chat requests to this backend when the client sends no `think` directive. A per-request `think` always overrides it. Affects **request behavior**, not model capabilities. See [Reasoning effort](#reasoning-effort). |
 | `Probing` | object | _(disabled)_ | Active capability probing. See [Capability detection](#capability-detection). |
+
+> [!NOTE]
+> `ContextLength` and `ReasoningEffort` are **backend-scoped defaults**, but they resolve at a finer
+> granularity: `ContextLength` is ultimately resolved **per model** (each model gets its own effective
+> value), and `ReasoningEffort` is resolved **per request** (a client's `think` field always takes
+> precedence). They live on the backend so one entry covers all of that backend's models — a
+> convenience, not a statement about their scope of effect. See [Context window](#context-window) and
+> [Reasoning effort](#reasoning-effort) for the full resolution order.
 
 ### Model registry
 
@@ -220,6 +308,7 @@ upstream model, and may override detected capabilities:
 | `SupportsTools` | bool? | `false` | Tool-calling support. |
 | `SupportsVision` | bool? | `false` | Vision support. |
 | `SupportsEmbeddings` | bool? | `false` | Embedding support. |
+| `ContextLength` | int? | _(required¹)_ | Context window (tokens) for this model. ¹Required when neither the backend nor its `ContextLength` default supplies one. See [Context window](#context-window). |
 
 > [!IMPORTANT]
 > A registry entry is **fully pinned** — it does **not** run live capability detection. Each
@@ -234,7 +323,9 @@ For every exposed model the proxy resolves three capabilities — **completion**
 **vision** (plus **embeddings**) — through a staged strategy, stopping at the first conclusive stage:
 
 1. **Backend metadata** — OpenRouter-style `input_modalities` and `supported_parameters` from the
-   `/v1/models` listing are authoritative when present.
+   `/v1/models` listing are authoritative when present. Venice's nested
+   `model_spec.capabilities` (`supportsFunctionCalling`, `supportsVision`) is mapped onto the same
+   metadata, so its models are detected without a provider-specific path.
 2. **Active probing** _(optional, off by default)_ — issues a tiny throwaway completion that
    advertises a dummy tool and caps generation at one token; a success implies tool support. Enable
    per backend:
@@ -251,6 +342,95 @@ For every exposed model the proxy resolves three capabilities — **completion**
 > Tool support is what allows GitHub Copilot Chat to enable tool/agent calling. If a model that does
 > support tools is not advertised as such, either pin `"SupportsTools": true` in the registry or turn
 > on probing for that backend.
+
+### Context window
+
+Clients such as GitHub Copilot need to know each model's **context window** to size their requests.
+If they have to guess and the real window is smaller, requests overflow and fail in confusing ways.
+OllamaProxy therefore resolves a concrete context length for every exposed model and advertises it on
+**both** inbound surfaces:
+
+- **`POST /api/show`** reports it under `model_info` as **`openai.context_length`** (the
+  architecture-prefixed key Ollama clients read).
+- **`GET /v1/models`** reports it as **`max_model_len`** (the field vLLM-native clients read).
+
+The context window is fundamentally a **per-model** attribute, and the proxy treats it that way: the
+effective value is resolved **for each model individually** from two sources, **smallest wins**:
+
+1. **Detected** — the backend's reported window, read **per model** from its `/v1/models` listing.
+   There is no single standard for this on `/v1/models`, so the proxy understands the common dialects
+   and uses the first one a backend provides (in this precedence order):
+   - **`max_model_len`** — vLLM and compatible servers (top-level).
+   - **`context_length`** — OpenRouter, Together, Fireworks, Mistral (top-level).
+   - **`top_provider.context_length`** — OpenRouter's nested underlying-provider window.
+   - **`model_spec.availableContextTokens`** — Venice (nested), alongside its
+     `model_spec.capabilities` block, which is also mapped onto tool/vision detection.
+   - **`meta.n_ctx_train`** — llama.cpp server (nested; the model's trained context length).
+2. **Configured** — a `ContextLength` on the registry entry (per model), or, as a fallback, the
+   backend's `ContextLength` default (one value standing in for all of that backend's models that
+   don't specify their own).
+
+The per-model value always leads; the backend default exists only so you can cover many models at once
+without repeating yourself — typically for a plain backend that advertises no window at all. When both
+a detected and a configured value are present the **smaller** is used, so configuration can only
+**narrow** the window, never widen it past what the backend will actually serve. That covers both
+directions safely:
+
+- Want to **cap** the window (e.g. to control cost)? Set a smaller `ContextLength` — it wins.
+- Backend later **shrinks** its window below your configured value? The detected (smaller) value wins
+  automatically, so you never advertise more than the backend serves.
+
+> [!IMPORTANT]
+> If a backend reports **no** context length and you configure none, startup **fails loudly** with a
+> message naming the model and the exact keys to set — the proxy never silently guesses a window.
+> Plain OpenAI-compatible backends (OpenAI itself, for example) do not advertise one, so set either
+> the registry entry's `ContextLength` or the backend's `ContextLength` default for them. Backends
+> that do advertise a window in any of the recognized dialects above need no configuration.
+
+**Request guardrail.** On `/api/chat` and `/api/generate`, a request whose `options.num_ctx` exceeds
+the model's resolved window is rejected with `400 Bad Request` and a message stating the requested and
+allowed sizes — an explicit failure instead of an opaque downstream one.
+
+> [!NOTE]
+> The guardrail checks the **declared** `num_ctx`, not the true token count of the prompt (which would
+> require a model-specific tokenizer). Accurate advertising via `/api/show` and `/v1/models` remains
+> the primary mechanism; the guardrail is a deterministic backstop against obvious misconfiguration.
+
+### Reasoning effort
+
+Modern "thinking" models can spend a variable amount of internal deliberation before answering.
+OllamaProxy exposes this through Ollama's standard **`think`** field on `/api/chat`, resolves it to a
+provider-neutral effort, and lets each backend's adapter encode it in that backend's own wire dialect.
+
+Reasoning effort is a **per-request** concern: its primary source is the client's `think` field on each
+individual call. The backend's `ReasoningEffort` is only a *fallback default* for requests that don't
+carry one — it is not a model attribute and never changes a model's advertised capabilities.
+
+**What clients send.** The inbound `think` field accepts either of Ollama's two shapes:
+
+- **Boolean** — `"think": true` maps to a balanced **`medium`** budget; `"think": false` turns
+  reasoning **off**.
+- **Level string** — `"think": "low"` (also `none`, `minimal`, `medium`, `high`, `xhigh`, `max`),
+  matched case-insensitively.
+
+**Precedence.** A per-request `think` always wins. When the request omits it, the backend's
+`ReasoningEffort` default applies. If neither is set, **no reasoning directive is sent at all** — the
+backend keeps its own default behavior. An unrecognized level string is ignored rather than guessed.
+
+**How each provider encodes it.** The neutral effort is mapped onto the backend's dialect by its
+`ProviderType` adapter:
+
+| `ProviderType` | Encoding | Notes |
+| --- | --- | --- |
+| `openai` | `reasoning_effort: "<level>"` | The canonical flat field; understood by OpenAI and most compatible servers. |
+| `venice` | `venice_parameters.disable_thinking: true` for **off**; `reasoning_effort` otherwise | Venice also accepts the extended `max` level. |
+| `vllm` | `reasoning_effort` **and** `chat_template_kwargs.enable_thinking` | Both are written so modern and older vLLM (and template-only setups) all work. |
+| `openrouter` | `reasoning_effort: "<level>"` | Accepts the full OpenAI-style set (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) on the flat field, so it inherits the generic encoding unchanged. |
+
+> [!NOTE]
+> The neutral vocabulary mirrors OpenAI's published set (`none`, `minimal`, `low`, `medium`, `high`,
+> `xhigh`) and adds Venice's `max`. Providers with a narrower range clamp accordingly, so the same
+> client request behaves sensibly across every backend.
 
 ### Secrets and environment variables
 
@@ -292,6 +472,13 @@ two-line quick start to a fully pinned production surface with no guesswork.
 
 ## Endpoints
 
+This is the **two surfaces, one port** idea made concrete. OllamaProxy exposes both inbound surfaces
+on the same port, exactly like a real Ollama install: the native Ollama API under `/api`, and the
+OpenAI-compatible API under `/v1`. Clients connect through whichever protocol they prefer — GitHub
+Copilot, for example, discovers models over `/api` but sends chat over `/v1/chat/completions`.
+
+### Ollama-native surface
+
 | Method & path | Purpose |
 | --- | --- |
 | `POST /api/chat` | Chat completion (streaming JSON-Lines or single response). |
@@ -304,9 +491,25 @@ two-line quick start to a fully pinned production surface with no guesswork.
 | `GET /api/ps` | Running models — always empty, since upstream backends manage their own lifecycle. |
 | `GET /health` | Liveness probe (`{"status":"ok"}`); answers even when all backends are unreachable. |
 
-Upstream failures are surfaced as Ollama-shaped error bodies (`{"error": "..."}`) in English. A
-genuine client error (4xx) from the backend is passed through; anything else is normalized to
-`502 Bad Gateway` to signal an upstream problem.
+### OpenAI-compatible surface
+
+| Method & path | Purpose |
+| --- | --- |
+| `GET /v1/models` | Model catalog in OpenAI list format (`{"object":"list","data":[…]}`). |
+| `POST /v1/chat/completions` | Chat completion (streaming SSE with a terminating `[DONE]`, or single JSON response). |
+| `POST /v1/completions` | Legacy text completion. |
+| `POST /v1/embeddings` | Embeddings (single string or array input). |
+
+Because the upstream backends are themselves OpenAI-compatible, the `/v1` routes forward the request
+body through verbatim — rewriting only the `model` field between the client-facing name and the
+resolved upstream identifier — so provider extensions and streamed tool-call deltas survive the
+round-trip losslessly.
+
+Upstream failures are surfaced in the shape that matches the inbound surface: an Ollama-shaped error
+body (`{"error": "..."}`) on `/api`, and an OpenAI error envelope
+(`{"error": {"message": "...", "type": "..."}}`) on `/v1`, both in English. A genuine client error
+(4xx) from the backend is passed through; anything else is normalized to `502 Bad Gateway` to signal
+an upstream problem.
 
 ---
 
@@ -320,8 +523,21 @@ GitHub Copilot Chat can use a local Ollama endpoint as a model provider. Point i
 3. Pick a model exposed by the proxy. For **tool/agent** features to appear, the model must be
    advertised as tool-capable via `/api/show` — see [Capability detection](#capability-detection).
 
-A practical split is a local backend for fast autocompletion and a cloud backend for heavy chat,
-both behind the single proxy endpoint (see [Example configurations](#example-configurations)).
+> [!IMPORTANT]
+> Copilot's Ollama provider only drives **Chat**. Visual Studio's **inline autocompletion** (the grey
+> ghost-text suggestions) runs on GitHub's own completion models and **cannot** be pointed at a local
+> Ollama endpoint or this proxy. So with Copilot, the proxy lets you choose the **chat** model only.
+> If you specifically want local-model autocompletion, drive it through **Continue.dev** instead (see
+> [Using with Continue.dev](#using-with-continuedev)), which has a dedicated autocomplete model setting.
+
+> [!NOTE]
+> Copilot Chat uses **both** surfaces: it discovers models and capabilities over the Ollama `/api`
+> routes, then sends the actual chat over `/v1/chat/completions` via its OpenAI client. The proxy
+> serves both, so discovery and chat work through the single `http://localhost:11434` endpoint.
+
+A practical split is one backend for chat and others routed by model name, all behind the single proxy
+endpoint (see [Example configurations](#example-configurations)). Local-model **autocompletion** in
+this split is a Continue.dev feature, not a Copilot one.
 
 ## Using with Continue.dev
 
@@ -357,6 +573,11 @@ In Continue's `config.json`, add a model with `"provider": "ollama"` and the pro
 The `model` value is the **client-facing name** as it appears in `/api/tags` — the proxy resolves it
 to the right backend and upstream model.
 
+> [!TIP]
+> Unlike Copilot, Continue.dev **can** drive local-model autocompletion through the proxy. Point its
+> `tabAutocompleteModel` at a fast local model exposed by the proxy (again with `"provider": "ollama"`
+> and `"apiBase": "http://localhost:11434"`), while keeping a heavier model for chat.
+
 For comparison, the proxy-free route (talking to a backend directly) would instead use Continue's
 native `openai` provider with an explicit `apiBase` and `apiKey` — useful when you only have a single
 backend and don't need discovery or multi-backend routing.
@@ -364,6 +585,11 @@ backend and don't need discovery or multi-backend routing.
 ---
 
 ## Example configurations
+
+These three configs trace the same progression as the [operating modes](#operating-modes) — from a
+single auto-discovered backend, through a mixed setup, to a fully pinned one. Pick the one that
+matches where your deployment is today; moving to the next is mostly a matter of adding `Models`
+entries and tightening `Mode`.
 
 ### Plug-and-Play (one cloud backend)
 
@@ -382,10 +608,10 @@ backend and don't need discovery or multi-backend routing.
 }
 ```
 
-### Hybrid (local autocompletion + cloud chat)
+### Hybrid (local + cloud side by side)
 
-A local LM Studio backend auto-exposes its models for autocompletion, while a cloud backend
-contributes a pinned, tool-capable chat model:
+A local LM Studio backend auto-exposes its models (handy as Continue.dev autocompletion or a
+lightweight chat model), while a cloud backend contributes a pinned, tool-capable chat model:
 
 ```json
 {
