@@ -1,0 +1,84 @@
+<Project>
+
+	<!-- Repository root -->
+	<PropertyGroup>
+		<RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\'))</RepoRoot>
+	</PropertyGroup>
+
+	<!-- Redirect all bin/obj output to /artifacts (official .NET 8+ feature) -->
+	<PropertyGroup>
+		<UseArtifactsOutput>true</UseArtifactsOutput>
+		<ArtifactsRoot>$(RepoRoot)artifacts\</ArtifactsRoot>
+		<ArtifactsPath>$(ArtifactsRoot)</ArtifactsPath>
+	</PropertyGroup>
+
+	<!-- Language & code style defaults (applied to all projects) -->
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<!--
+		    Pin the language version (C# 14 matches .NET 10 / net10.0 per Microsoft’s TFM defaults).
+		    Avoid latest/latestMajor: they track the installed compiler and can differ between machines
+		    (e.g. newer VS / SDK), leading to “compiles here, fails there” on newer syntax.
+		    Bump this value only when the team agrees to adopt a newer C# (and SDK support is in place).
+		-->
+		<LangVersion>14</LangVersion>
+
+		<!-- Enforce .editorconfig style/formatting rules during build (incl. CI). -->
+		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+		<!--
+			Treat warnings as errors to keep the codebase clean, but allow CS1591
+			(missing XML doc) to remain a warning so work-in-progress builds are not blocked.
+
+			Also exclude quality-of-life analyzer rules that are noisy or require architectural
+			refactoring (CA1848: LoggerMessage delegates, CA1873: logging guard checks,
+			CA1859: performance-based type optimizations, CA1861: static readonly test data).
+		-->
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+		<WarningsNotAsErrors>CS1591;CA1848;CA1873;CA1859;CA1861</WarningsNotAsErrors>
+
+		<!--
+		    Pin the analyzer rule set to the .NET 10 generation (matches TargetFramework).
+		    Avoid 'latest': it tracks the installed SDK and would drift between machines, just like LangVersion.
+		    AnalysisMode=Recommended is a curated, high-signal subset; bump to 'All' once warning count is under control.
+		-->
+		<AnalysisLevel>10</AnalysisLevel>
+		<AnalysisMode>Recommended</AnalysisMode>
+
+		<!-- Docs + debugging -->
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<DebugType>portable</DebugType>
+		<ContinuousIntegrationBuild>$(CI)</ContinuousIntegrationBuild>
+	</PropertyGroup>
+
+	<!-- Assembly and repository metadata -->
+	<PropertyGroup>
+		<Company>LumaCoreTech</Company>
+		<Product>LumaCore</Product>
+		<Authors>LumaCoreTech</Authors>
+		<RepositoryUrl>https://github.com/LumaCoreTech/LumaCore</RepositoryUrl>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+	</PropertyGroup>
+
+	<!-- MinVer Configuration -->
+	<PropertyGroup>
+		<MinVerTagPrefix>v</MinVerTagPrefix>
+		<MinVerDefaultPreReleaseIdentifiers>ci</MinVerDefaultPreReleaseIdentifiers>
+	</PropertyGroup>
+
+	<!-- Tooling packages (kept private; versions are centralized via Directory.Packages.props) -->
+	<ItemGroup>
+		<PackageReference Include="Microsoft.SourceLink.GitHub">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="MinVer">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+</Project>

@@ -1,0 +1,76 @@
+<Project>
+
+	<!--
+		Sync the shared Copilot instruction baseline from the build.net submodule into the repo's
+		.github/instructions/ directory on every build. base.instructions.md is owned by build.net
+		and is always overwritten. Repo-specific rules belong in repo.instructions.md, which this
+		target never touches.
+
+		Runs before the first Compile step so Copilot sees up-to-date instructions throughout the
+		dev session. Disabled on CI where Copilot is not used (CI env var is set by GitHub Actions).
+	-->
+	<Target Name="SyncCopilotInstructions"
+	        BeforeTargets="BeforeBuild"
+	        Condition="'$(CI)' != 'true'"
+	        Outputs="$(RepoRoot).github\instructions\base.instructions.md">
+		<PropertyGroup>
+			<_CopilotBaseSource>$(MSBuildThisFileDirectory)..\build.net\.github\instructions\base.instructions.md</_CopilotBaseSource>
+			<_CopilotBaseDestDir>$(RepoRoot).github\instructions\</_CopilotBaseDestDir>
+		</PropertyGroup>
+		<MakeDir Directories="$(_CopilotBaseDestDir)" Condition="!Exists('$(_CopilotBaseDestDir)')" />
+		<Copy SourceFiles="$(_CopilotBaseSource)"
+		      DestinationFolder="$(_CopilotBaseDestDir)"
+		      SkipUnchangedFiles="true"
+		      Condition="Exists('$(_CopilotBaseSource)')" />
+	</Target>
+
+	<!-- Optional: clean up /artifacts via 'dotnet clean /p:RemoveArtifacts=true' -->
+	<Target Name="CleanArtifacts"
+	        AfterTargets="Clean"
+	        Condition="'$(RemoveArtifacts)' == 'true' and Exists('$(ArtifactsRoot)')">
+		<Message Text="Removing $(ArtifactsRoot)" Importance="high" />
+		<RemoveDir Directories="$(ArtifactsRoot)" />
+	</Target>
+
+	<!-- Optional: label publish outputs with semantic version -->
+	<!-- Skip with /p:SkipArtifactNaming=true (e.g., in Docker builds) -->
+	<Target Name="SetArtifactName" BeforeTargets="Publish" Condition="'$(SkipArtifactNaming)' != 'true'">
+		<PropertyGroup>
+			<_SemVer>$(NBGV_SemVer2)</_SemVer>
+			<_Suffix Condition="'$(NBGV_IsPublicRelease)' != 'true'">-ci</_Suffix>
+			<ArtifactName>$(MSBuildProjectName)-$(_SemVer)$(_Suffix)</ArtifactName>
+			<PublishDir>$(ArtifactsRoot)bin\$(Configuration)\$(TargetFramework)\publish\$(ArtifactName)\</PublishDir>
+		</PropertyGroup>
+	</Target>
+
+	<!-- Global Test Configuration -->
+	<ItemGroup Condition="'$(IsTestProject)' == 'true'">
+		<Content Include="$(MSBuildThisFileDirectory)xunit.runner.json"
+		         CopyToOutputDirectory="PreserveNewest"
+		         Visible="false" />
+		<Content Include="$(MSBuildThisFileDirectory)coverlet.runsettings"
+		         CopyToOutputDirectory="PreserveNewest"
+		         Visible="false" />
+	</ItemGroup>
+
+	<!--
+		CA1707 (no underscores in identifiers) conflicts with the repository test-naming
+		convention Method_State_Expectation (see .github/copilot-instructions.md, section
+		"Testing → Authoring Rules → Naming"). Suppress globally for test projects so each
+		test project does not have to repeat the NoWarn.
+	-->
+	<PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+		<NoWarn>$(NoWarn);CA1707</NoWarn>
+	</PropertyGroup>
+
+	<!--
+		Coverage report defaults for all test projects.
+		Active only when coverage is collected via coverlet.msbuild
+		(e.g. `dotnet test /p:CollectCoverage=true`).
+	-->
+	<PropertyGroup Condition="'$(IsTestProject)' == 'true' and '$(CollectCoverage)' == 'true'">
+		<CoverletOutputFormat>cobertura</CoverletOutputFormat>
+		<ExcludeByAttribute>DebuggerNonUserCode%2cGeneratedCodeAttribute%2cExcludeFromCodeCoverage</ExcludeByAttribute>
+	</PropertyGroup>
+
+</Project>

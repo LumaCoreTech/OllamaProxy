@@ -1,0 +1,36 @@
+﻿<!-- Copyright (c) 2026 LumaCoreTech -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Project: https://github.com/LumaCoreTech/OllamaProxy -->
+
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!-- 
+		Project: OllamaProxy.Tests
+		Purpose: Unit tests for the OllamaProxy project, covering controllers, mappers, and the provider abstraction.
+		Scope: This project contains test classes and methods that validate the functionality of the main application
+		       code in OllamaProxy. It references the main project to access internal types and ensures that all
+		       components work as expected.
+	-->
+	<PropertyGroup>
+		<IsPackable>false</IsPackable>
+		<IsTestProject>true</IsTestProject>
+		<!-- Test projects intentionally do not require XML documentation. -->
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="coverlet.collector" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" />
+		<PackageReference Include="xunit" />
+		<PackageReference Include="xunit.runner.visualstudio" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Using Include="Xunit" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\OllamaProxy\OllamaProxy.csproj" />
+	</ItemGroup>
+
+</Project>

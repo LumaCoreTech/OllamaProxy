@@ -17,7 +17,10 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Restore first so the layer is cached when only source files change.
-COPY Directory.Build.props ./
+COPY src/Directory.Build.props \
+     src/Directory.Build.targets \
+     src/Directory.Build.packages \
+     src/
 COPY src/OllamaProxy/OllamaProxy.csproj src/OllamaProxy/
 RUN dotnet restore src/OllamaProxy/OllamaProxy.csproj
 
