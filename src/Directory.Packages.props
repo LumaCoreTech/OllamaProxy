@@ -3,7 +3,7 @@
 		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageVersion Include="coverlet.collector" Version="6.0.4" />
+		<PackageVersion Include="coverlet.collector" Version="10.0.1" />
 		<PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.6.0" />
 		<PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
 		<PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.201" />
