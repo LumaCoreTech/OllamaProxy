@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+    Coverage settings for the installer custom-action test project.
+
+    The <RunSettings> payload below is kept in lockstep with src/coverlet.runsettings (this file adds
+    only the explanatory comment block, so the two are not literally byte-for-byte identical). This is a
+    deliberate duplicate, not a reference: installer/Directory.Build.props intentionally does not inherit
+    from /src (see the note at the top of that file), so the shared src/Directory.Build.targets that
+    wires these settings into every /src test project does not reach the installer tree. Duplicating
+    mirrors how installer/Directory.Packages.props already duplicates the test-package versions from
+    /src. If src/coverlet.runsettings changes, update this copy to match.
+-->
+
+<RunSettings>
+    <DataCollectionRunSettings>
+        <DataCollectors>
+            <DataCollector friendlyName="XPlat Code Coverage">
+                <Configuration>
+                    <Format>cobertura</Format>
+                    <ExcludeByAttribute>DebuggerNonUserCode,GeneratedCodeAttribute,ExcludeFromCodeCoverage</ExcludeByAttribute>
+                    <IncludeTestAssembly>false</IncludeTestAssembly>
+                </Configuration>
+            </DataCollector>
+        </DataCollectors>
+    </DataCollectionRunSettings>
+</RunSettings>

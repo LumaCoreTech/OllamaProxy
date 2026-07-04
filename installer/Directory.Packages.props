@@ -1,0 +1,35 @@
+<Project>
+
+	<!--
+		Central package versions for the installer build, scoped to /installer so they stay independent
+		of the application's src/Directory.Packages.props. WiX v7 and the DTF custom-action toolchain are
+		pinned here; MinVer supplies the version the MSI carries.
+	-->
+	<ItemGroup>
+		<!--
+			WixToolset.Sdk is an MSBuild project SDK, not a PackageReference: it is resolved (by version)
+			before central package management applies, so it is pinned inline in OllamaProxy.Installer.wixproj
+			as Sdk="WixToolset.Sdk/7.0.0" rather than here. The extensions below ARE PackageReferences and
+			take their versions from this file.
+		-->
+		<PackageVersion Include="WixToolset.UI.wixext" Version="7.0.0" />
+		<PackageVersion Include="WixToolset.Util.wixext" Version="7.0.0" />
+		<PackageVersion Include="WixToolset.Dtf.CustomAction" Version="7.0.0" />
+		<PackageVersion Include="WixToolset.Dtf.WindowsInstaller" Version="7.0.0" />
+		<PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
+		<PackageVersion Include="MinVer" Version="7.0.0" />
+	</ItemGroup>
+
+	<!--
+		Test packages for the Windows-only custom-action test project. Versions are kept in lockstep with
+		src/Directory.Packages.props so the installer and the application test on the same toolchain; they
+		add no new third-party dependency beyond what the app's test project already uses.
+	-->
+	<ItemGroup>
+		<PackageVersion Include="coverlet.collector" Version="6.0.4" />
+		<PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+		<PackageVersion Include="xunit" Version="2.9.3" />
+		<PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+	</ItemGroup>
+
+</Project>

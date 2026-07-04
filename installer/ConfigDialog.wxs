@@ -1,0 +1,340 @@
+<!-- Copyright (c) 2026 LumaCoreTech -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Project: https://github.com/LumaCoreTech/OllamaProxy -->
+
+<!--
+    Backend configuration UI and the custom actions behind it.
+
+    The installer collects the backend provider, its URL, and its API key, lets the operator verify them
+    live before committing, and writes them into the secured %ProgramData%\OllamaProxy folder after the
+    files are laid down:
+
+      * appsettings.json  — the proxy backend configuration (provider, base URL, API key).
+      * hostsettings.json — the chassis configuration (listen and admin endpoint URLs).
+
+      * TestBackend      — immediate, runs when the operator clicks "Test connection". Validates syntax and
+                           issues a real GET {BaseUrl}/models, reporting the verdict in a modal popup.
+      * WriteAppSettings — deferred and elevated, runs during install after the files are copied. Writes
+                           the entered values to both config files, preserving any pre-existing config.
+
+    Both live in OllamaProxy.CustomActions.CA.dll, embedded by the wixproj's ProjectReference. The
+    authored Binary id below matches the assembly name MakeSfxCA produces.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+    <Fragment>
+
+        <!--
+            Public properties (UPPERCASE so they survive the UI-to-execute handoff). The URL carries a
+            sensible default; the key starts empty. OLLAMAPROXY_TESTRESULT/_TESTOK are populated by the
+            TestBackend action and read by the dialog. Secure="yes" lets the values flow to the deferred,
+            elevated WriteAppSettings action.
+        -->
+        <Property Id="OLLAMAPROXY_BASEURL" Value="https://api.openai.com/v1" Secure="yes" />
+        <Property Id="OLLAMAPROXY_APIKEY" Secure="yes" />
+        <Property Id="OLLAMAPROXY_PROVIDERTYPE" Value="openai" Secure="yes" />
+        <Property Id="OLLAMAPROXY_TESTRESULT" Value="{}" Secure="yes" />
+        <Property Id="OLLAMAPROXY_TESTOK" Value="0" Secure="yes" />
+
+        <!--
+            Listener endpoints configured on the port-configuration page. The defaults mirror the
+            application defaults so a fresh install works out of the box. Both are URLs rather than raw
+            port numbers so an operator can also change the bind address (for example to listen on all
+            interfaces in a container-like deployment).
+        -->
+        <Property Id="OLLAMAPROXY_LISTENURL" Value="http://localhost:11434" Secure="yes" />
+        <Property Id="OLLAMAPROXY_ADMINURL" Value="http://localhost:11435" Secure="yes" />
+        <Property Id="OLLAMAPROXY_PORTRESULT" Value="{}" Secure="yes" />
+        <Property Id="OLLAMAPROXY_PORTOK" Value="0" Secure="yes" />
+
+        <!--
+            Fresh-install discriminator passed to the deferred config writer. Defaults to "0" (preserve)
+            and is flipped to "1" only by SetFreshInstall below, on a genuine first install. The writer
+            uses it to decide whether to (re)write the wizard's values or keep an existing config: an
+            upgrade or repair preserves, a first install writes (backing up any leftover file first).
+        -->
+        <Property Id="OLLAMAPROXY_FRESHINSTALL" Value="0" />
+
+        <!--
+            Keep the API key out of verbose MSI logs (msiexec /l*v). Secure="yes" lets the key cross the
+            UI-to-execute boundary but does NOT redact it from the log; MsiHiddenProperties does. Both names
+            are listed: OLLAMAPROXY_APIKEY is the raw property, and WriteAppSettings is the deferred action's
+            CustomActionData (which embeds the key, marshaled by the SetWriteAppSettings type-51 action),
+            whose value MSI would otherwise echo in a "PROPERTY CHANGE" log line.
+        -->
+        <Property Id="MsiHiddenProperties" Value="OLLAMAPROXY_APIKEY;WriteAppSettings" />
+
+        <!-- The managed custom-action assembly embedded by the wixproj ProjectReference. -->
+        <Binary Id="OllamaProxyCA" SourceFile="$(var.CADir)OllamaProxy.CustomActions.CA.dll" />
+
+        <!--
+            Test connection: immediate, does not change the machine, returns its verdict through
+            OLLAMAPROXY_TESTRESULT/_TESTOK.
+        -->
+        <CustomAction Id="TestBackend" BinaryRef="OllamaProxyCA" DllEntry="TestBackend" Execute="immediate" Return="check" />
+
+        <!--
+            Check local ports: immediate, does not change the machine, returns its verdict through
+            OLLAMAPROXY_PORTRESULT/_PORTOK.
+        -->
+        <CustomAction Id="CheckPorts" BinaryRef="OllamaProxyCA" DllEntry="CheckPorts" Execute="immediate" Return="check" />
+
+        <!--
+            Write config: deferred so it runs inside the install transaction, and "deferred in system
+            context" so it has the rights to write into the secured data folder. Deferred actions cannot
+            read properties directly, so the values are marshaled through CustomActionData by the
+            SetWriteAppSettings type-51 action immediately before it (the action id must equal the property
+            name the type-51 action sets).
+        -->
+        <!--
+            Short CustomActionData keys keep the type-51 target string under the MSI column length limit
+            (ICE03). The deferred action maps these terse names back to readable parameters internally.
+        -->
+        <CustomAction Id="SetWriteAppSettings"
+                      Property="WriteAppSettings"
+                      Value="AppCfg=[DATAFOLDER]appsettings.json;HostCfg=[DATAFOLDER]hostsettings.json;Url=[OLLAMAPROXY_BASEURL];Prov=[OLLAMAPROXY_PROVIDERTYPE];Key=[OLLAMAPROXY_APIKEY];Listen=[OLLAMAPROXY_LISTENURL];Admin=[OLLAMAPROXY_ADMINURL];Fresh=[OLLAMAPROXY_FRESHINSTALL]" />
+
+        <!--
+            Mark this run a genuine first install — neither a maintenance/repair (Installed) nor a major
+            upgrade (WIX_UPGRADE_DETECTED, set by FindRelatedProducts). Scheduled after that action so the
+            upgrade flag is populated, and well before SetWriteAppSettings marshals the value. On any other
+            run the property keeps its "0" default, so the writer preserves the existing configuration.
+        -->
+        <SetProperty Id="OLLAMAPROXY_FRESHINSTALL"
+                     Value="1"
+                     After="FindRelatedProducts"
+                     Sequence="execute"
+                     Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+
+        <CustomAction Id="WriteAppSettings"
+                      BinaryRef="OllamaProxyCA"
+                      DllEntry="WriteAppSettings"
+                      Execute="deferred"
+                      Impersonate="no"
+                      Return="check" />
+
+        <!--
+            Open the admin UI in the default browser after a successful, interactive first install.
+            Immediate and impersonated so the browser runs in the operator's session, not the system
+            account. Suppressed during uninstall, major upgrades, and silent installs (UILevel <= 3).
+        -->
+        <CustomAction Id="OpenAdminUi"
+                      BinaryRef="OllamaProxyCA"
+                      DllEntry="OpenAdminUi"
+                      Execute="immediate"
+                      Return="ignore" />
+
+        <!--
+            Schedule the config writer late in the install, after the files (and the data folder with its
+            DACL) exist, and only on install/upgrade — never on uninstall. SetWriteAppSettings must run
+            immediately before WriteAppSettings so the marshaled data is current.
+        -->
+        <InstallExecuteSequence>
+            <Custom Action="SetWriteAppSettings" After="InstallFiles" Condition="NOT REMOVE" />
+            <Custom Action="WriteAppSettings" After="SetWriteAppSettings" Condition="NOT REMOVE" />
+            <Custom Action="OpenAdminUi" After="InstallFinalize" Condition="NOT Installed AND NOT REMOVE AND NOT WIX_UPGRADE_DETECTED AND UILevel &gt; 3" />
+        </InstallExecuteSequence>
+
+        <!--
+            The backend configuration dialog. A provider selector, two edit fields, and a Test-connection
+            button that runs the immediate TestBackend action and shows its verdict in a modal popup, so a
+            wrong key or a URL missing its /v1 suffix is caught before Next. The masked key field keeps the
+            secret off-screen.
+
+            Everything in this fragment — properties, the CA binary, the custom actions, the execute
+            sequence, and this UI — links as a unit: the package pulls it in with a single
+            <UIRef Id="OllamaProxyConfigUI"/>. WiX fragment linking is all-or-nothing, so that one reference
+            guarantees the custom actions and binary ship too (a separate, unreferenced fragment would be
+            silently dropped from the MSI).
+        -->
+        <UI Id="OllamaProxyConfigUI">
+            <!--
+                Port configuration page. Shown before the backend page so the operator sets the local
+                endpoints first, then the upstream backend. Both fields accept full URLs so the bind
+                address can be changed as well as the port. A short hint reminds the operator to keep
+                the two ports distinct — the proxy engine and the admin chassis refuse to share an
+                endpoint.
+            -->
+            <Dialog Id="PortConfigDlg" Width="370" Height="270" Title="OllamaProxy Setup">
+
+                <!-- Standard banner (reuses the WixUI dialog set's banner bitmap binary). -->
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+                <Control Id="Title" Type="Text" X="15" Y="6" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Port configuration" />
+                <Control Id="Description" Type="Text" X="25" Y="23" Width="320" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose the local endpoints the proxy and the admin panel listen on." />
+
+                <!-- Ollama-compatible listener URL. -->
+                <Control Id="ListenUrlLabel" Type="Text" X="15" Y="52" Width="340" Height="24" NoPrefix="yes" Text="Ollama-compatible listener URL (default port 11434, mirrors Ollama):" />
+                <Control Id="ListenUrlEdit" Type="Edit" X="15" Y="76" Width="340" Height="16" Property="OLLAMAPROXY_LISTENURL" />
+
+                <!-- Admin UI URL. -->
+                <Control Id="AdminUrlLabel" Type="Text" X="15" Y="100" Width="340" Height="24" NoPrefix="yes" Text="Admin panel URL (default port 11435, must differ from the listener port):" />
+                <Control Id="AdminUrlEdit" Type="Edit" X="15" Y="124" Width="340" Height="16" Property="OLLAMAPROXY_ADMINURL" />
+
+                <!--
+                    Check ports: runs the immediate CheckPorts action, then opens a modal popup that shows
+                    its verdict. The popup is needed for the same reason as the backend test: a custom action
+                    can set a property, but cannot refresh a field on this dialog in place.
+                -->
+                <Control Id="CheckPortsButton" Type="PushButton" X="15" Y="188" Width="90" Height="17" Text="Check ports">
+                    <Publish Event="DoAction" Value="CheckPorts" Order="1" />
+                    <Publish Event="SpawnDialog" Value="PortCheckResultDlg" Order="2" />
+                </Control>
+
+                <!-- Hint. -->
+                <Control Id="PortHint" Type="Text" X="111" Y="188" Width="244" Height="42" Transparent="yes" NoPrefix="yes" Text="Use a full URL with a port, e.g. http://localhost:11434. The two endpoints must use different ports. Click Check ports to detect an existing listener." />
+
+                <!-- Navigation. -->
+                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" />
+                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)" />
+                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+                    <Publish Event="SpawnDialog" Value="CancelDlg" />
+                </Control>
+                <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+            </Dialog>
+
+            <Dialog Id="BackendConfigDlg" Width="370" Height="270" Title="OllamaProxy Setup">
+
+                <!-- Standard banner (reuses the WixUI dialog set's banner bitmap binary). -->
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+                <Control Id="Title" Type="Text" X="15" Y="6" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Backend configuration" />
+                <Control Id="Description" Type="Text" X="25" Y="23" Width="320" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose your backend provider, confirm its base URL, and enter your API key." />
+
+                <!--
+                    Provider selector. A ListBox (not a ComboBox) because the four providers are a closed
+                    set: MSI combo boxes are always editable — there is no drop-down-list style — so a
+                    ComboBox would let the operator type a free-form value. A ListBox is selection-only,
+                    which is exactly the constraint we want here. Selecting a provider prefills its canonical
+                    base URL through the Publish events below: the three fixed-endpoint providers (Venice,
+                    OpenRouter, vLLM) get their well-known URL, and "OpenAI-compatible" restores the OpenAI
+                    default for any other endpoint. The bound property updates before the events evaluate, so
+                    each condition sees the freshly selected value. The URL field below stays editable so an
+                    operator can still point a provider at a non-default endpoint.
+                -->
+                <Control Id="ProviderLabel" Type="Text" X="15" Y="52" Width="340" Height="12" NoPrefix="yes" Text="Backend provider:" />
+                <Control Id="ProviderList" Type="ListBox" X="15" Y="64" Width="340" Height="52" Property="OLLAMAPROXY_PROVIDERTYPE" Sorted="no">
+                    <ListBox Property="OLLAMAPROXY_PROVIDERTYPE">
+                        <ListItem Value="openai" Text="OpenAI-compatible (enter the base URL below)" />
+                        <ListItem Value="venice" Text="Venice" />
+                        <ListItem Value="openrouter" Text="OpenRouter" />
+                        <ListItem Value="vllm" Text="vLLM (self-hosted)" />
+                    </ListBox>
+                    <Publish Property="OLLAMAPROXY_BASEURL" Value="https://api.venice.ai/api/v1" Condition="OLLAMAPROXY_PROVIDERTYPE = &quot;venice&quot;" />
+                    <Publish Property="OLLAMAPROXY_BASEURL" Value="https://openrouter.ai/api/v1" Condition="OLLAMAPROXY_PROVIDERTYPE = &quot;openrouter&quot;" />
+                    <Publish Property="OLLAMAPROXY_BASEURL" Value="http://localhost:8000/v1" Condition="OLLAMAPROXY_PROVIDERTYPE = &quot;vllm&quot;" />
+                    <Publish Property="OLLAMAPROXY_BASEURL" Value="https://api.openai.com/v1" Condition="OLLAMAPROXY_PROVIDERTYPE = &quot;openai&quot;" />
+                </Control>
+
+                <!-- Base URL (prefilled by the provider selector; editable for custom endpoints). -->
+                <Control Id="UrlLabel" Type="Text" X="15" Y="119" Width="340" Height="12" NoPrefix="yes" Text="Backend base URL (prefilled per provider; keep the version segment, e.g. /v1):" />
+                <Control Id="UrlEdit" Type="Edit" X="15" Y="131" Width="340" Height="16" Property="OLLAMAPROXY_BASEURL" />
+
+                <!-- API key (masked). -->
+                <Control Id="KeyLabel" Type="Text" X="15" Y="150" Width="340" Height="12" NoPrefix="yes" Text="API key:" />
+                <Control Id="KeyEdit" Type="Edit" X="15" Y="162" Width="340" Height="16" Property="OLLAMAPROXY_APIKEY" Password="yes" />
+
+                <!--
+                    Test connection: runs the immediate TestBackend action, then opens a modal popup that
+                    shows its verdict. The popup is essential: TestBackend reports its result by setting
+                    OLLAMAPROXY_TESTRESULT on the session, but a property set from a custom action raises no
+                    control-event, so a field on THIS dialog cannot refresh in place — and a NewDialog back to
+                    this same dialog would make MSI build a second copy of it (internal error 2856). A spawned
+                    child dialog sidesteps both: BackendTestResultDlg draws once, formats the fresh
+                    [OLLAMAPROXY_TESTRESULT] text, and closes back here. Order makes the synchronous DoAction
+                    (Return="check") complete before the popup opens, so the current message is shown. Every
+                    field on this page is property-bound, so the operator's entries survive untouched.
+                -->
+                <Control Id="TestButton" Type="PushButton" X="15" Y="183" Width="90" Height="17" Text="Test connection">
+                    <Publish Event="DoAction" Value="TestBackend" Order="1" />
+                    <Publish Event="SpawnDialog" Value="BackendTestResultDlg" Order="2" />
+                </Control>
+
+                <!--
+                    Hint beside the button. The verdict now appears in the modal BackendTestResultDlg popup
+                    (a custom-action property cannot refresh a field on this dialog in place), so a short
+                    static line points the operator there and keeps the page balanced where the old inline
+                    result box used to sit.
+                -->
+                <Control Id="TestHint" Type="Text" X="111" Y="185" Width="244" Height="26" Transparent="yes" NoPrefix="yes" Text="The connection-test result is shown in a popup window." />
+
+                <!-- Navigation. -->
+                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" />
+                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)" />
+                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+                    <Publish Event="SpawnDialog" Value="CancelDlg" />
+                </Control>
+                <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+            </Dialog>
+
+            <!--
+                Connection-test result popup, spawned modally by the Test button after the synchronous
+                TestBackend action has run. SpawnDialog (not a self-NewDialog) is the MSI-native way to show
+                a custom action's result: the child dialog draws once and formats [OLLAMAPROXY_TESTRESULT]
+                fresh, so it always reflects the latest verdict; OK closes it with EndDialog/Return, handing
+                control back to the backend page with every entered value intact. NoMinimize keeps it a plain
+                modal. The OK button is both Default and Cancel, so Enter and Esc both dismiss it.
+            -->
+            <Dialog Id="BackendTestResultDlg" Width="260" Height="135" Title="OllamaProxy Setup" NoMinimize="yes">
+                <Control Id="Title" Type="Text" X="15" Y="10" Width="230" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Connection test" />
+                <Control Id="ResultText" Type="Text" X="15" Y="30" Width="230" Height="55" NoPrefix="yes" Text="[OLLAMAPROXY_TESTRESULT]" />
+                <Control Id="OK" Type="PushButton" X="189" Y="105" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIOK)">
+                    <Publish Event="EndDialog" Value="Return" />
+                </Control>
+            </Dialog>
+
+            <!--
+                Port-check result popup, spawned modally by the Check ports button after the synchronous
+                CheckPorts action has run. Mirrors BackendTestResultDlg but formats the port-check result.
+            -->
+            <Dialog Id="PortCheckResultDlg" Width="260" Height="135" Title="OllamaProxy Setup" NoMinimize="yes">
+                <Control Id="Title" Type="Text" X="15" Y="10" Width="230" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Port check" />
+                <Control Id="ResultText" Type="Text" X="15" Y="30" Width="230" Height="55" NoPrefix="yes" Text="[OLLAMAPROXY_PORTRESULT]" />
+                <Control Id="OK" Type="PushButton" X="189" Y="105" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIOK)">
+                    <Publish Event="EndDialog" Value="Return" />
+                </Control>
+            </Dialog>
+
+            <!--
+                Splice PortConfigDlg and BackendConfigDlg into the WixUI_InstallDir flow. The default route
+                is InstallDirDlg -> VerifyReadyDlg; these overrides redirect it through the two custom pages:
+                InstallDirDlg -> PortConfigDlg -> BackendConfigDlg -> VerifyReadyDlg (and back again).
+
+                Routing rule that makes this work: a control with several NewDialog events fires the one with
+                the HIGHEST Order whose condition is true. So every splice below must out-rank the stock
+                publish it competes with, and carry a condition that is actually true at runtime.
+            -->
+            <!--
+                Forward from the install-location page into the port page instead of straight to VerifyReady.
+                The stock InstallDirDlg/Next -> VerifyReadyDlg publish compiles to Ordering 4 with an
+                always-true condition, so this must use a higher Order (5) to win. The condition mirrors the
+                OLLAMAPROXY_FRESHINSTALL discriminator exactly (NOT Installed AND NOT WIX_UPGRADE_DETECTED),
+                so the port page appears on a genuine first install only: on a major upgrade the entered
+                values would be ignored anyway (WriteAppSettings preserves the existing config), and a repair
+                or change keeps the stock route to VerifyReadyDlg. FindRelatedProducts runs early in the
+                InstallUISequence, so WIX_UPGRADE_DETECTED is already populated when Next is evaluated.
+            -->
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="PortConfigDlg" Order="5" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+
+            <!-- Port page navigation. -->
+            <Publish Dialog="PortConfigDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Order="1" />
+            <Publish Dialog="PortConfigDlg" Control="Next" Event="NewDialog" Value="BackendConfigDlg" Order="1" />
+
+            <!-- Backend page navigation. -->
+            <Publish Dialog="BackendConfigDlg" Control="Back" Event="NewDialog" Value="PortConfigDlg" Order="1" />
+            <Publish Dialog="BackendConfigDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="1" />
+
+            <!--
+                Return from the confirmation page lands back on the backend page, not on InstallDir. The
+                condition must match the forward splice above exactly so the two routes stay mirror images:
+                when the custom pages are shown on the way in (fresh install only), Back returns to them;
+                on a major upgrade — where the forward route skips them — Back falls through to the stock
+                VerifyReadyDlg -> InstallDirDlg route instead, so the user never lands on a page they did
+                not pass through. Order 3 out-ranks the stock Back publishes (Ordering 1-2).
+            -->
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="BackendConfigDlg" Order="3" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+        </UI>
+
+    </Fragment>
+
+</Wix>

@@ -1,0 +1,68 @@
+<Project>
+
+	<!--
+		Isolated build configuration for the Windows installer.
+
+		This file intentionally does NOT inherit src/Directory.Build.props. MSBuild imports only the
+		first Directory.Build.props found walking up from a project, and this file sits directly above
+		the installer projects, so the .NET 10 TFM, SourceLink, the analyzer rule set, and the artifacts
+		output redirect defined under /src never reach the installer. The installer keeps its own,
+		smaller surface here.
+	-->
+
+	<!--
+		Redirect all build output (bin + obj, MSI + intermediates) for the installer projects out of the
+		source tree into the repo-wide /artifacts folder, mirroring what UseArtifactsOutput does for /src.
+		The installer deliberately does NOT use UseArtifactsOutput (the .NET 8+ feature /src enables): the
+		WiX v7 SDK and the net472 MakeSfxCA toolchain do not honor that feature's relocated, lower-cased
+		layout reliably, so the MSI / CA paths become hard to predict. A manual BaseOutputPath /
+		BaseIntermediateOutputPath redirect keeps full control over the layout while still emptying the
+		project folder.
+
+		$(MSBuildProjectName) gives each project its own subtree (artifacts\installer\OllamaProxy.Installer\
+		and ...\OllamaProxy.CustomActions\), so the wixproj and the custom-action csproj never collide.
+		BaseIntermediateOutputPath (obj) MUST be set here in Directory.Build.props — it is consumed during
+		restore, before the project body is read — so restore and build agree on the obj location.
+	-->
+	<PropertyGroup>
+		<RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\'))</RepoRoot>
+		<ArtifactsRoot>$(RepoRoot)artifacts\</ArtifactsRoot>
+		<BaseOutputPath>$(ArtifactsRoot)installer\$(MSBuildProjectName)\bin\</BaseOutputPath>
+		<BaseIntermediateOutputPath>$(ArtifactsRoot)installer\$(MSBuildProjectName)\obj\</BaseIntermediateOutputPath>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<!--
+			The installer is built from a WiX package plus a managed custom action that MakeSfxCA wraps
+			into a native DLL. MakeSfxCA and the Windows Installer tooling are Windows-only, so the
+			projects neutralize themselves on other hosts (see each project file). This flag is the single
+			switch they read, so `dotnet build OllamaProxy.slnx` on the Linux CI leg stays green.
+		-->
+		<IsWindowsHost Condition="'$(OS)' == 'Windows_NT'">true</IsWindowsHost>
+		<IsWindowsHost Condition="'$(OS)' != 'Windows_NT'">false</IsWindowsHost>
+	</PropertyGroup>
+
+	<!--
+		WiX Toolset v7 ships under the Open Source Maintenance Fee (OSMF). Building requires accepting
+		its EULA, which the WiX targets check by looking for "wix7" in the AcceptEula property (see
+		WixToolset.Dtf.CustomAction's CheckLicenseAcceptance.targets, error WIX7015).
+
+		Accepting the EULA is NOT the same as owing the fee. Per the OSMF EULA (section 1), the Fee
+		applies only to users who employ the Software in revenue-generating activities AND have annual
+		gross revenue >= US$10,000; users below that threshold are exempt. LumaCoreTech is a
+		non-commercial GitHub organization that generates no revenue, so the fee does not apply and this
+		acceptance carries no payment obligation. If that ever changes, revisit https://wixtoolset.org/osmf/.
+
+		Setting it here (rather than relying on the per-machine %USERPROFILE%\.wix\wix7-osmf-eula.txt
+		marker) keeps the build reproducible and unblocks CI agents.
+	-->
+	<PropertyGroup>
+		<AcceptEula>$(AcceptEula);wix7</AcceptEula>
+	</PropertyGroup>
+
+	<!-- Central package management, scoped to the installer (versions in this folder's Directory.Packages.props). -->
+	<PropertyGroup>
+		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+	</PropertyGroup>
+
+</Project>

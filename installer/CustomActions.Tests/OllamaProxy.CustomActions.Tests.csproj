@@ -1,0 +1,76 @@
+<!-- Copyright (c) 2026 LumaCoreTech -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Project: https://github.com/LumaCoreTech/OllamaProxy -->
+
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!--
+		Unit tests for the managed Windows Installer custom actions (OllamaProxy.CustomActions).
+
+		Targets net472 — the same framework the custom action ships on — so the pure helpers are tested
+		on exactly the runtime they run under at install time, not a near-equivalent. Reaching the
+		internal helpers relies on the InternalsVisibleTo entry in the custom-action project.
+
+		Windows-only: the custom action neutralizes to a no-op on a non-Windows host (the Linux CI leg),
+		so there is nothing to test there. This project mirrors that neutralization (no test SDK, NoBuild,
+		sources excluded) so `dotnet build`/`dotnet test OllamaProxy.slnx` stays green on Linux and runs
+		the tests on Windows.
+	-->
+
+	<PropertyGroup>
+		<TargetFramework>net472</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<Nullable>disable</Nullable>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<IsPackable>false</IsPackable>
+		<RootNamespace>OllamaProxy.CustomActions.Tests</RootNamespace>
+		<AssemblyName>OllamaProxy.CustomActions.Tests</AssemblyName>
+
+		<!-- Only a test project on Windows; on Linux it neutralizes, so `dotnet test` skips it there. -->
+		<IsTestProject Condition="'$(IsWindowsHost)' == 'true'">true</IsTestProject>
+
+		<!--
+			On a non-Windows host, skip the actual compile (mirrors the custom-action project). With no
+			sources and no package references, the SDK produces nothing and the solution still builds.
+		-->
+		<NoBuild Condition="'$(IsWindowsHost)' != 'true'">true</NoBuild>
+	</PropertyGroup>
+
+	<!--
+		Build everything below only on Windows. The Condition on the ItemGroups keeps the project file
+		valid (and restorable) on Linux while contributing no Windows-only package references there.
+	-->
+	<ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+		<PackageReference Include="coverlet.collector" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" />
+		<PackageReference Include="xunit" />
+		<PackageReference Include="xunit.runner.visualstudio" />
+		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+		<ProjectReference Include="..\CustomActions\OllamaProxy.CustomActions.csproj" />
+	</ItemGroup>
+
+	<!--
+		Test runner + coverage settings, mirroring what src/Directory.Build.targets contributes to every
+		/src test project. They live here as local copies because installer/Directory.Build.props does not
+		inherit from /src (so those shared targets never reach this tree); the files are kept in lockstep
+		with src/xunit.runner.json and src/coverlet.runsettings. Windows-only, matching the rest of this
+		project: on the Linux leg the sources are removed below, so there is nothing to configure there.
+	-->
+	<ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+		<Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+		<Content Include="coverlet.runsettings" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+	</ItemGroup>
+
+	<!-- On non-Windows hosts, exclude the sources so the empty project restores and "builds" cleanly. -->
+	<ItemGroup Condition="'$(IsWindowsHost)' != 'true'">
+		<Compile Remove="**\*.cs" />
+	</ItemGroup>
+
+</Project>

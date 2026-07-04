@@ -1,0 +1,80 @@
+<!-- Copyright (c) 2026 LumaCoreTech -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Project: https://github.com/LumaCoreTech/OllamaProxy -->
+
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!--
+		Managed Windows Installer custom actions for the OllamaProxy installer.
+
+		Targets .NET Framework 4.7.2 because the WiX DTF custom-action host (MakeSfxCA) wraps a managed
+		assembly built against the .NET Framework into a native CA DLL the Windows Installer can load.
+		net472 is present on every supported Windows 10/11 machine, so no extra runtime is required at
+		install time.
+
+		Windows-only: MakeSfxCA and the packaging task ship Windows binaries. On a non-Windows host
+		(the Linux CI leg that builds OllamaProxy.slnx) the project neutralizes itself to a no-op via the
+		IsWindowsHost guard from installer/Directory.Build.props, so the solution still builds there.
+	-->
+
+    <PropertyGroup>
+        <TargetFramework>net472</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <Nullable>disable</Nullable>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+        <RootNamespace>OllamaProxy.CustomActions</RootNamespace>
+        <AssemblyName>OllamaProxy.CustomActions</AssemblyName>
+
+        <!--
+			On a non-Windows host, skip the actual compile/packaging. TargetFrameworks is emptied so the
+			SDK produces nothing and MakeSfxCA (Windows-only) is never invoked.
+		-->
+        <NoBuild Condition="'$(IsWindowsHost)' != 'true'">true</NoBuild>
+    </PropertyGroup>
+
+    <!--
+		Build everything below only on Windows. The Condition on the ItemGroups keeps the project file
+		valid (and restorable) on Linux while contributing no Windows-only package references there.
+	-->
+    <ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+        <PackageReference Include="WixToolset.Dtf.CustomAction" />
+        <PackageReference Include="WixToolset.Dtf.WindowsInstaller" />
+        <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+        <Reference Include="System.Net.Http" />
+    </ItemGroup>
+
+    <!--
+        Expose internal members to the Windows-only unit-test project so the pure helpers (config-write
+        policy, endpoint parsing, JSON building/escaping, response interpretation) can be tested directly
+        on the same net472 target they ship on. Windows-only because the test project itself only exists
+        on the Windows leg; on Linux the custom action neutralizes to a no-op and has no test consumer.
+    -->
+    <ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+        <InternalsVisibleTo Include="OllamaProxy.CustomActions.Tests" />
+    </ItemGroup>
+
+    <!--
+		The CLR host config MakeSfxCA embeds beside the packaged assembly. As <Content> it flows through
+		the DTF PackCustomAction target (which forwards @(Content) to MakeSfxCA) and pins the CA host to
+		CLR 4.0; without it the stub loads the oldest runtime (v2.0) and fails net472 with error 1603.
+		Windows-only because MakeSfxCA runs only on the Windows leg; copying it to the output is pointless.
+	-->
+    <ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+        <Content Include="CustomAction.config">
+            <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+
+    <!-- On non-Windows hosts, exclude the sources so the empty project restores and "builds" cleanly. -->
+    <ItemGroup Condition="'$(IsWindowsHost)' != 'true'">
+        <Compile Remove="**\*.cs" />
+    </ItemGroup>
+
+</Project>

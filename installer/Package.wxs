@@ -1,0 +1,172 @@
+<!-- Copyright (c) 2026 LumaCoreTech -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Project: https://github.com/LumaCoreTech/OllamaProxy -->
+
+<!--
+    OllamaProxy installer package.
+
+    Installs the self-contained application into Program Files, registers it as an auto-start Windows
+    Service running under the isolated NT SERVICE\OllamaProxy account, provisions a secured
+    %ProgramData%\OllamaProxy data area, and collects the backend URL/key through a custom dialog that
+    can test connectivity live before committing (see ConfigDialog.wxs). Any upgrade with the same
+    UpgradeCode removes the prior version first and preserves the operator's live config in the data folder.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+    <Package
+        Name="OllamaProxy"
+        Manufacturer="LumaCoreTech"
+        Version="$(var.ProductVersion)"
+        UpgradeCode="FB63BF66-F163-42F4-8290-74B4BC58258C"
+        Scope="perMachine"
+        Compressed="yes">
+
+        <!--
+            Block downgrades and run the upgrade early so the old version is removed before the new files
+            land — the cleanest sequencing for a service that holds a file lock on its binaries.
+        -->
+        <MajorUpgrade DowngradeErrorMessage="A newer version of OllamaProxy is already installed. Setup will now exit." />
+
+        <!-- Single embedded cab keeps the deliverable to one self-contained .msi file. -->
+        <MediaTemplate EmbedCab="yes" />
+
+        <!-- All payload lives in one feature for now; finer-grained features can split out later. -->
+        <Feature Id="Main" Title="OllamaProxy" Level="1">
+            <ComponentGroupRef Id="AppFiles" />
+            <ComponentRef Id="ServiceExecutable" />
+            <ComponentRef Id="ProgramDataFolder" />
+        </Feature>
+
+        <!--
+            User experience: the standard WixUI_InstallDir wizard (Welcome - License - InstallDir -
+            VerifyReady - Exit) with our backend-configuration page spliced in between the install-location
+            and confirmation pages (see the dialog-routing overrides in ConfigDialog.wxs). A linear dialog
+            set fits a single-feature service installer better than Mondo's feature tree. The WixUI element
+            with InstallDirectory emits the WIXUI_INSTALLDIR property that the browse page edits.
+        -->
+        <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+        <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+        <!--
+            Pull in the backend-configuration fragment (ConfigDialog.wxs). WiX fragment linking is
+            reference-driven and all-or-nothing, so this single reference also brings in the TestBackend /
+            WriteAppSettings custom actions, the CA binary, the config properties, and the execute-sequence
+            scheduling that live alongside the dialog in that fragment.
+        -->
+        <UIRef Id="OllamaProxyConfigUI" />
+
+    </Package>
+
+    <!--
+        Install tree: Program Files\OllamaProxy. ProgramFiles64Folder (rather than the 32-bit folder)
+        because the app is published win-x64. The CommonAppData branch is the writable, secured data area
+        the service reads its live config and writes its traces to.
+    -->
+    <Fragment>
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="OllamaProxy" />
+        </StandardDirectory>
+        <StandardDirectory Id="CommonAppDataFolder">
+            <Directory Id="DATAFOLDER" Name="OllamaProxy" />
+        </StandardDirectory>
+    </Fragment>
+
+    <!--
+        The service executable, authored as an explicit component (rather than left to the <Files> harvest)
+        so the service install/control rows have a stable KeyPath to attach to. OllamaProxy.exe and its
+        web.config are therefore excluded from the harvest below to avoid double-installing them.
+
+        Identity: the service runs under the virtual account "NT SERVICE\OllamaProxy", which the Service
+        Control Manager creates and isolates per-service. Unlike LocalSystem or NetworkService, its token is
+        unique to this service, so the API key in the data folder is not readable by other services — the
+        isolation requirement that ruled NetworkService out.
+    -->
+    <Fragment>
+        <Component Id="ServiceExecutable" Directory="INSTALLFOLDER" Guid="*">
+            <File Id="OllamaProxyExe" Source="$(var.PublishDir)\OllamaProxy.exe" KeyPath="yes" />
+            <File Id="OllamaProxyWebConfig" Source="$(var.PublishDir)\web.config" />
+
+            <ServiceInstall
+                Id="OllamaProxyService"
+                Name="OllamaProxy"
+                DisplayName="OllamaProxy"
+                Description="Ollama-compatible proxy in front of an OpenAI-compatible backend. The listener port and admin endpoint are configured during installation."
+                Type="ownProcess"
+                Start="auto"
+                ErrorControl="normal"
+                Account="NT SERVICE\OllamaProxy"
+                Vital="yes">
+
+                <!-- Restart the service on the first two crashes, then give up; reset the counter daily. -->
+                <util:ServiceConfig
+                    FirstFailureActionType="restart"
+                    SecondFailureActionType="restart"
+                    ThirdFailureActionType="none"
+                    RestartServiceDelayInSeconds="10"
+                    ResetPeriodInDays="1" />
+            </ServiceInstall>
+
+            <!-- Start on install, stop on uninstall, and remove the service registration on uninstall. -->
+            <ServiceControl
+                Id="OllamaProxyServiceControl"
+                Name="OllamaProxy"
+                Start="install"
+                Stop="both"
+                Remove="uninstall"
+                Wait="yes" />
+        </Component>
+    </Fragment>
+
+    <!--
+        The secured data area: %ProgramData%\OllamaProxy. Created empty here and held open by a registry
+        KeyPath (a directory cannot itself be a component KeyPath). The DACL is reset (no inheritance) to
+        exactly three principals, so a standard interactive user cannot read the API key that the
+        configuration dialog writes into appsettings.json:
+          * LocalSystem            — administrative servicing and install-time custom actions
+          * Administrators         — operators managing the machine
+          * NT SERVICE\OllamaProxy — the service identity that must read the config at runtime
+        The folder is intentionally left behind on uninstall so an operator's configuration survives an
+        upgrade or repair. A subsequent genuine reinstall rewrites appsettings.json from the wizard, but
+        first backs up any leftover file under a timestamped name (see WriteAppSettings), so a deliberately
+        retained configuration is never lost silently.
+    -->
+    <Fragment>
+        <Component Id="ProgramDataFolder" Directory="DATAFOLDER" Guid="9B870C83-15E5-4EEB-B697-19F34E452E40" Permanent="yes">
+            <RegistryValue
+                Root="HKLM"
+                Key="Software\LumaCoreTech\OllamaProxy"
+                Name="DataFolder"
+                Type="string"
+                Value="[DATAFOLDER]"
+                KeyPath="yes" />
+
+            <CreateFolder>
+                <util:PermissionEx Inheritable="yes" User="SYSTEM" GenericAll="yes" />
+                <util:PermissionEx Inheritable="yes" User="Administrators" GenericAll="yes" />
+                <util:PermissionEx Inheritable="yes" User="OllamaProxy" Domain="NT SERVICE" GenericAll="yes" />
+            </CreateFolder>
+        </Component>
+    </Fragment>
+
+    <!--
+        Harvest the self-contained publish output. WiX v7's <Files> element replaces the legacy heat
+        harvester: it discovers every file under the publish folder at build time and emits one component
+        each. OllamaProxy.exe and web.config are excluded because the service component above owns them.
+        appsettings.json is the operator WORKING COPY (it may carry a real API key) and is excluded so it
+        never lands in the read-only install folder; the live config lives in %ProgramData% and is written
+        by WriteAppSettings. The annotated, never-loaded appsettings.reference.json IS harvested by the glob
+        and ships read-only beside the binaries as the settings manual and factory-reset baseline.
+    -->
+    <Fragment>
+        <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+            <Files Include="$(var.PublishDir)\**">
+                <Exclude Files="$(var.PublishDir)\OllamaProxy.exe" />
+                <Exclude Files="$(var.PublishDir)\web.config" />
+                <Exclude Files="$(var.PublishDir)\appsettings.json" />
+            </Files>
+        </ComponentGroup>
+    </Fragment>
+
+</Wix>

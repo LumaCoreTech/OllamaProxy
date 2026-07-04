@@ -1,0 +1,89 @@
+<!-- Copyright (c) 2026 LumaCoreTech -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Project: https://github.com/LumaCoreTech/OllamaProxy -->
+<!--
+    WiX v7 installer for OllamaProxy: a per-machine MSI that installs the self-contained app, registers
+    it as an auto-start Windows Service, lays down a secured %ProgramData%\OllamaProxy data area, and
+    collects the backend URL/key through a custom dialog backed by the DTF custom actions.
+
+    A member of OllamaProxy.slnx for IDE visibility (so Visual Studio and the HeatWave extension load it as
+    a WiX v4+ SDK project), but Windows-only to build: the package embeds the net472 DTF custom-action
+    assembly (OllamaProxy.CustomActions.CA.dll) and harvests a win-x64 self-contained publish — both
+    Windows-only.
+
+    Cross-platform safety lives entirely on the solution level: OllamaProxy.slnx marks this project
+    <Build Project="false">, so `dotnet build` / `dotnet restore OllamaProxy.slnx` never builds or restores
+    it on the Linux CI leg — verified by running both in a .NET 10 Linux container. That single exclusion
+    replaces the earlier machinery (conditional SDK imports, a NonWindows.targets no-op, and an installer
+    global.json), so the project file stays in its canonical SDK form below. The MSI itself is produced by
+    an explicit build on the Windows CI/release legs after the app is published (see .github/workflows).
+
+    Build:  dotnet build installer\OllamaProxy.Installer.wixproj -c Release -p:Platform=x64
+-->
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputName>OllamaProxy</OutputName>
+    <OutputType>Package</OutputType>
+    <!-- The app publishes as win-x64; the MSI matches so ProgramFiles64 and 64-bit components line up. -->
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+  </PropertyGroup>
+  <PropertyGroup>
+    <!--
+            Folder of self-contained binaries the MSI harvests. Overridable so CI can point at an absolute
+            publish location; defaults to the local publish profile output. No trailing slash so the wxs
+            glob reads cleanly as "$(var.PublishDir)\**".
+        -->
+    <PublishDir Condition="'$(PublishDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\publish\win-x64</PublishDir>
+    <!--
+            Product version stamped into the MSI. Overridable from CI (the release tag drives it); a sane
+            default keeps local builds working. MSI ProductVersion only honors the first three fields.
+        -->
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0</ProductVersion>
+    <!--
+            Directory holding the MakeSfxCA-wrapped custom-action assembly. The ProjectReference below
+            builds it to this path first, and the WiX preprocessor reads it as $(var.CADir) when binding
+            the <Binary> that carries TestBackend/WriteAppSettings. $(ArtifactsRoot) comes from
+            installer\Directory.Build.props, which redirects both installer projects under /artifacts.
+        -->
+    <CADir>$(ArtifactsRoot)installer\OllamaProxy.CustomActions\bin\$(Configuration)\net472\</CADir>
+    <!-- Surface the harvest root, version, and CA directory to the WiX preprocessor. -->
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion);CADir=$(CADir)</DefineConstants>
+  </PropertyGroup>
+  <!--
+        WiX extensions. Util supplies util:PermissionEx (the secured %ProgramData% DACL) and the service
+        failure-recovery configuration. UI supplies the WixUI_Mondo dialog set the backend-config page is
+        spliced into. Versions come from installer/Directory.Packages.props. Guarded to Windows because they
+        belong to the MSI build pipeline; the $(OS) guard keeps even a *direct* `dotnet restore` of this
+        single project inert on non-Windows hosts (the solution build already skips it via slnx Build=false).
+    -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <PackageReference Include="WixToolset.Util.wixext" />
+    <PackageReference Include="WixToolset.UI.wixext" />
+  </ItemGroup>
+  <!--
+      The managed DTF custom actions. The ProjectReference builds the CA project first so its MakeSfxCA-wrapped
+      binary (OllamaProxy.CustomActions.CA.dll) exists where ConfigDialog.wxs binds it via $(var.CADir). The
+      dialog's Test-connection action and the deferred config writer are available to the package. It is also
+      listed as a member of OllamaProxy.slnx for IDE visibility, but the solution marks the installer project
+      <Build Project="false">, so a solution-level build or restore never builds or restores it on non-Windows
+      hosts. The ItemGroup here is additionally guarded to Windows, where the net472 / MakeSfxCA toolchain exists,
+      so a direct restore of this single project on a non-Windows host is inert and never pulls in the net472
+      reference assemblies.
+
+      AdditionalProperties Platform=AnyCPU pins the CA build to AnyCPU regardless of the MSI platform.
+        The managed net472 assembly is architecture-neutral (x64 belongs to the MSI, not the CA). Without
+        the pin, a command-line -p:Platform=x64 (used by CI) flows in as a global property and MSBuild
+        inserts an x64 segment into the output path (...\OllamaProxy.CustomActions\bin\x64\Release\net472\),
+        no longer matching $(CADir) (...\bin\$(Configuration)\net472\ under /artifacts) and failing the WiX
+        bind with WIX0103. The pin keeps the output deterministic regardless of -p:Platform.
+    -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <ProjectReference Include="CustomActions\OllamaProxy.CustomActions.csproj" AdditionalProperties="Platform=AnyCPU" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="build-installer.ps1" />
+    <None Include="CustomActions.Tests\OllamaProxy.CustomActions.Tests.csproj" />
+    <None Include="CustomActions\CustomAction.config" />
+  </ItemGroup>
+</Project>
