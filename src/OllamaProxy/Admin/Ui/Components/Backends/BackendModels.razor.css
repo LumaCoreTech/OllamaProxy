@@ -1,0 +1,678 @@
+/* ReSharper disable once DeclarationIsEmpty */
+/* ReSharper disable once DeclarationIsEmpty */
+/* ReSharper disable once DeclarationIsEmpty */
+/* ReSharper disable once DeclarationIsEmpty */
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Model list: the combined registry/discovered table revealed under the connection settings, with its own
+   header row carrying the refresh and probe actions opposite the "Models" title. */
+
+.backend-models {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--admin-border-table);
+}
+
+.backend-models-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.backend-models-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--admin-text-secondary);
+}
+
+.backend-models-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Model action (Refresh / Probe capabilities): quiet secondary buttons matching the page-level add button. */
+
+.backend-model-action {
+    padding: 0.3rem 0.8rem;
+    font-size: 0.8rem;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+    cursor: pointer;
+}
+
+.backend-model-action:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+/* Per-backend mode note: explains why a single PlugAndPlay backend hides its pin controls without implying the
+   whole proxy is in that mode. */
+
+.backend-mode-note {
+    /* Wrap at a readable width so the note can't inflate the shrink-wrapped card. */
+    max-width: var(--admin-reading-width);
+    margin: 0.25rem 0 0.5rem;
+    font-size: 0.85rem;
+    color: var(--admin-info-text);
+}
+
+/* Streaming probe progress: a status row above the table while a capability probe fills it model-by-model.
+   It carries a spinner, a running "n resolved" count, and a Cancel button so a slow scan never traps the
+   operator. */
+
+.backend-probe-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.5rem 0 0.25rem;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8rem;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-info);
+    border: 1px solid var(--admin-border-info);
+    border-radius: 0.3rem;
+}
+
+.backend-probe-progress-text {
+    font-weight: 500;
+}
+
+/* Push the Cancel button to the row's right edge, away from the spinner and count. */
+
+.backend-probe-cancel {
+    margin-left: auto;
+}
+
+/* A small indeterminate spinner: a spinning ring rendered purely in CSS so no asset or script is needed. */
+
+.backend-probe-spinner {
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 2px solid var(--admin-spinner-track);
+    border-top-color: var(--admin-spinner-head);
+    border-radius: 50%;
+    animation: backend-probe-spin 0.7s linear infinite;
+    flex: none;
+}
+
+@keyframes backend-probe-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Honor a user's reduced-motion preference: drop the spin and let the ring sit as a static busy indicator. */
+
+@media (prefers-reduced-motion: reduce) {
+    .backend-probe-spinner {
+        animation: none;
+    }
+}
+
+.backend-counts {
+    display: flex;
+    gap: 1.25rem;
+    margin: 0.25rem 0 0.75rem;
+    font-size: 0.85rem;
+    color: var(--admin-text-secondary);
+}
+
+.backend-empty,
+.backend-error {
+    /* Wrap at a readable width so a long message can't inflate the shrink-wrapped card. */
+    max-width: var(--admin-reading-width);
+    margin: 0.5rem 0 0;
+    color: var(--admin-text-secondary);
+}
+
+.backend-error {
+    color: var(--admin-danger-text);
+}
+
+/* Plain passthrough wrapper: the table's content width must propagate up so the shrink-wrapped card can
+   grow to fit it. An overflow container here would instead trap the width and hide it behind an
+   out-of-reach in-table scrollbar, exactly what we're avoiding. Any overflow beyond the window falls to
+   the browser's viewport scrollbar, which keeps the header, cards and sync-bar aligned as one scrollable
+   page.
+
+   Deliberately NOT capped with max-width: 100%. The table carries fixed minimum widths in its cells (the
+   capability grid, the name input, the context input), so it cannot compress below its intrinsic width.
+   Capping the wrapper to its parent would therefore not shrink the table; it would clip it, pushing the
+   rightmost column (the Context input) out past the card's right border. Leaving the wrapper at
+   width: max-content lets the table report its true width up the chain
+   (.backend-editor → .backend-card → .backends-page all grow to fit it), and any overflow beyond the
+   window falls to the viewport scrollbar. */
+
+.backend-table-scroll {
+    width: max-content;
+    padding: 0.5rem 0.75rem 0.75rem;
+}
+
+/* Table layout: auto. The auto algorithm sizes each column to its widest cell across all rows, so:
+    - the Model column grows to fit the longest model id in the table;
+    - the Exposed-as column grows to fit the longest client-facing name (or a name input in a pinned
+      row, or the placeholder in an unpinned row);
+    - the State, Caps and Context columns size to whatever their content needs.
+
+    This is the layout the operator expects: a backend with short model names renders a narrow Model
+    column; a backend with long model names (or a custom name override) renders a wider one. The Pin
+    column is the only fixed column (see <col class="col-pin"> below): it is the row's identity anchor
+    and never reflows, while the rest of the table breathes with the data.
+
+    width: max-content sizes the table to its content, not to the full card: with the no-wrap identity
+    columns this makes the table exactly as wide as it needs to be (left-aligned, no stretched columns
+    with gaps), and the card grows to match. */
+
+.backend-table {
+    table-layout: auto;
+    width: max-content;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+/* Pin column: a fixed 3.5rem width set via <col>. This is the table's only fixed column: it gives
+   the pin checkbox a stable home regardless of how wide the other columns grow. Without it the auto
+   algorithm would shrink the Pin column to the checkbox itself (about 1rem), leaving an unbalanced
+   left edge once the other columns sized themselves. 3.5rem is the comfortable padding for a centred
+   checkbox plus the cell's 0.6rem padding on each side. */
+
+.col-pin {
+    width: 3.5rem;
+}
+
+/* Remaining column hooks: one class per non-pin <col> in the table's colgroup (see BackendModels.razor).
+   They carry no width today: table-layout: auto sizes these columns to their content. The empty rule is
+   kept on purpose so each named column has a place for a future width tweak to land without touching every
+   <td>, and so the Razor colgroup and this stylesheet stay visibly linked. */
+
+.col-model,
+.col-exposed,
+.col-state,
+.col-caps,
+.col-context {
+    /* Intentionally empty: content-sized by table-layout: auto until a width is needed here. */
+}
+
+.backend-table th,
+.backend-table td {
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    border-bottom: 1px solid var(--admin-border-table);
+}
+
+.backend-table th {
+    font-weight: 600;
+    color: var(--admin-text-secondary);
+}
+
+.backend-table caption {
+    text-align: left;
+    caption-side: top;
+}
+
+/* Caption hook: the <caption> is hidden from sighted users by the global .visually-hidden utility and
+   positioned by the .backend-table caption element rule above; this class-based hook carries no rule
+   today. It is kept so the caption has a named component-scoped anchor for any future visible styling,
+   mirroring the same caption pattern used on the Models page. */
+
+.backend-table-caption {
+    /* Intentionally empty: caption presentation is owned by .visually-hidden and the element rule above. */
+}
+
+/* Drift count: the "N drifted" tally in the counts row above the table. Amber text to tie it to the drift
+   badge in the table, but plain text (not a pill) since it is part of a running count line. The Drifted badge
+   itself now renders through the shared Badge primitive (Variant="Warning"); see BackendModels.razor. */
+
+.backend-count-drift {
+    font-weight: 600;
+    color: var(--admin-warning-text);
+}
+
+.row-drift {
+    background-color: var(--admin-warning-bg-light);
+}
+
+/* Paired pin rows: a pinned model renders as two welded rows. The pin checkbox and upstream id span both rows as
+   the model's identity; the capability and context columns are reported-above-editable pairs (the disabled head
+   value above the editable override below); the remaining column stacks the two pin-only fields (name above,
+   reasoning below). The border between the rows is suppressed and redrawn under the spanning identity cells so the
+   pin + upstream id read as one block. Field cells align to the bottom so every control in a row rests on one
+   shared baseline: the name/dropdown, the two-line capability grid, and the single-line inputs all meet the same
+   bottom edge despite their differing heights, instead of each centring at its own height. */
+
+.model-pin-head td {
+    border-bottom: none;
+    vertical-align: bottom;
+}
+
+.model-span {
+    border-bottom: 1px solid var(--admin-border-table);
+}
+
+/* Identity cells span both rows; keep them top-aligned so the model id holds a steady top-left scan position
+   instead of dropping to the bottom of its pair. The compound selector outranks the bottom rule above. */
+
+.model-pin-head td.model-span {
+    vertical-align: top;
+}
+
+/* Override tray: a faint neutral tint across the editable cells sets the override row apart from the head above
+   it. Because the tint sits on the cells (which keep their normal table-cell display), it spans the full width of
+   every override column up to the row's end. Cells align to the bottom so the reasoning selector (which carries a
+   caption above it), the capability grid, and the context input all rest on one shared baseline rather than each
+   centring at its own height. */
+
+.model-pin-overrides td {
+    vertical-align: bottom;
+    background-color: var(--admin-surface-tray);
+}
+
+/* Drift wins over the neutral tray tint: a drifted override row keeps the amber wash. The compound selector
+    outranks the plain tray rule, so amber applies regardless of source order. */
+
+.model-pin-overrides.row-drift td {
+    background-color: var(--admin-warning-bg-light);
+}
+
+/* Reported placeholder: shown in a reported capability/context cell when discovery left the value undetermined
+   (a probe-skipped model), so the cell reads as "unknown" rather than as a real disabled control. */
+
+.model-reported-none {
+    color: var(--admin-text-faint);
+}
+
+/* Unavailable-pin note: replaces the two reported facet cells when the backend has stopped advertising a pinned
+   model, so the empty state reads as an explanation rather than empty disabled controls. The muted italic keeps
+   it distinct from a real reported value. */
+
+.model-unavailable-note {
+    font-style: italic;
+    color: var(--admin-danger-text);
+}
+
+/* Identity columns size to content: the upstream id and the exposed name are the row's identifying labels, so
+   they read best on a single line. With table-layout: fixed the <col> width is the column width, so a model id
+   longer than 20rem needs to truncate gracefully instead of pushing the table wider. white-space: nowrap keeps
+   the id on one line; overflow: hidden + text-overflow: ellipsis adds the "..." suffix when a name exceeds the
+   column. min-width: 0 is the magic ingredient: a table cell's default min-width is its content's intrinsic
+   width, which here is the full untruncated model id: without min-width: 0 the cell refuses to shrink past
+   that intrinsic width and the table overflows regardless of the <col> width. */
+
+.model-upstream,
+.model-exposed-cell {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Not-exposed hint: in Explicit mode an unpinned discovered model is listed but not auto-exposed at runtime, so
+   its "Exposed as" cell shows a muted placeholder instead of a client-facing name the proxy never serves. The
+   muted grey matches the reported-none placeholder so it reads as "nothing here yet", and the parenthetical hint
+   tells the operator that pinning is what exposes it. */
+
+.model-not-exposed {
+    color: var(--admin-text-faint);
+}
+
+.model-not-exposed-hint {
+    font-style: italic;
+}
+
+/* Name edit: the read-only prefix affix and the editable bare-name input on one line, so the client-facing name
+   reads as "prefix / name" with only the name part editable. */
+
+.model-name-edit {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+/* Prefix affix: the backend's fixed ModelPrefix shown before the name input. Muted and monospace so it reads as
+   a non-editable, system-applied segment rather than part of the editable value. */
+
+.model-name-prefix {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--admin-text-muted);
+    white-space: nowrap;
+}
+
+/* Name input: shrink-wraps to its actual value (or its size attribute) up to a 12rem cap, and never
+   drops below an 8rem editing minimum. The key change from width: 100% is that a 100%-width input
+   always inflates the column to its max-width (12rem) even when only one pinned row exists in a
+   table full of plain-text "(pin to expose)" placeholders. The auto-width input instead grows with
+   the actual value: a 10-character name like "claude-opus-4-8" produces a ~10rem input, a 20-char
+   custom name produces a 20rem input up to the 12rem cap (longer names get truncated inside the
+   input as the operator types: the cell stays the right size for the column's longest other value).
+   The column is sized by the auto algorithm to the widest non-input content in the column (e.g. a
+   long model id in a non-pin row, or the longest exposed name), and the input conforms. */
+
+.model-name-input {
+    display: inline-block;
+    width: auto;
+    min-width: 8rem;
+    max-width: 12rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+}
+
+/* Capability grid: the four flag checkboxes, laid out as a CSS grid that adapts to the column's
+   available width.
+
+   repeat(auto-fit, minmax(6.5rem, 1fr)) is the responsive switch:
+    - When the Capabilities column is wide enough for two 6.5rem tracks plus the 0.9rem column gap
+      (≥ ~13.9rem cell width), the grid renders as 2 columns, producing the compact 2x2 ("completion"
+      beside "tools" in row 1, "vision" beside "embeddings" in row 2). 6.5rem is the minimum width
+      that fits a single <label class="backend-check"> (checkbox + 0.4rem gap + the longest label
+      "embeddings" at 0.85rem font) without wrapping the label. This is the layout the override
+      row expects when the table has enough horizontal room: the four checkboxes pair up as a tidy
+      square and the head row's reported checkboxes line up cell-for-cell with the override row's
+      editable checkboxes.
+    - When the column is narrower than ~14rem, auto-fit collapses to a single column, producing 4x1:
+      the checkboxes stack vertically ("completion", "tools", "vision", "embeddings" top to bottom).
+      This kicks in on narrow viewports or in cards that haven't grown to the full page width, and
+      it keeps "embeddings" readable instead of wrapping the label.
+
+    1fr as the upper bound lets the items share any leftover cell width evenly when only one track
+    fits (so the single-column layout is the full cell width, not the narrowest 6.5rem). min-width: 0
+    on the items lets the flex children inside .backend-check shrink below their content width if
+    the cell gets tight. justify-content: start keeps the grid left-aligned inside the cell. */
+
+.model-caps-edit {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+    gap: 0.2rem 0.9rem;
+    min-width: 14rem;
+    justify-content: start;
+}
+
+.model-caps-edit > * {
+    min-width: 0;
+}
+
+/* Context input: shrink-wraps to its actual value (or its size attribute) up to an 8rem cap, with a
+   5rem editing minimum. A fixed 8rem input would inflate the Context column to 8rem in a table where
+   only one row has an input and every other row shows a short plain-text number like "128,000"
+   (~5rem), leaving visible empty space next to those rows. The auto-width input sizes to the
+   displayed value, so a 6-digit override like "100000" produces a 6rem input, a 7-digit one
+   produces a 7rem input, both well within the 8rem cap. The 5rem minimum keeps the "Inherit"
+   placeholder readable. */
+
+.model-context-input {
+    display: inline-block;
+    width: auto;
+    min-width: 5rem;
+    max-width: 8rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+}
+
+/* Reasoning override: the per-pin effort selector, sized and bordered to match the name input it stacks under so
+   the column's two pin-only fields share one width and visual language. It sits in the override row's first cell;
+   its caption labels it since this column carries no dedicated header. The blank "Inherit" option clears the pin. */
+
+.model-reasoning-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+/* Inline field caption: a small muted label above a stacked control that has no column header of its own (the
+   reasoning selector), so the field is named without widening the table with an extra header. */
+
+.model-field-caption {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--admin-text-muted);
+}
+
+/* Reasoning select: shrink-wraps to its longest option (or its size attribute) up to a 12rem cap,
+   with an 8rem editing minimum. Same rationale as the Name input: auto-width lets the column size
+   to the longest non-input content in the same column, and the select conforms. The cap matches the
+   Name input's cap so the override row's Reasoning select and the head row's Name input share one
+   visual width. */
+
+.model-reasoning-select {
+    display: inline-block;
+    width: auto;
+    min-width: 8rem;
+    max-width: 12rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+}
+
+.model-name-input:disabled,
+.model-context-input:disabled {
+    background-color: var(--admin-surface-code);
+    opacity: 0.7;
+}
+
+/* Duplicate-name state: a red border + tinted fill flag a name that collides with another entry on this
+   backend. The matching #842029 red ties it to .backend-error so danger reads consistently across the surface.
+   This is early, non-blocking feedback: Apply's dry-run is still the authoritative check. */
+
+.model-name-input-invalid {
+    border-color: var(--admin-danger-text);
+    background-color: var(--admin-danger-bg-light);
+}
+
+/* Inline duplicate-name message: sits directly under the offending input, mirroring BackendOptions.Validate's
+    rule so the operator sees the clash while typing. The danger text color ties it to .backend-error; the small
+    size keeps it a row-level hint rather than a page-level error. */
+
+.model-name-duplicate {
+    max-width: 16rem;
+    margin: 0.25rem 0 0;
+    font-size: 0.75rem;
+    color: var(--admin-danger-text);
+}
+
+.model-reasoning-select:disabled {
+    background-color: var(--admin-surface-code);
+    opacity: 0.7;
+}
+
+/* Details toggle: a small caret beside the upstream id that opens the model's metadata panel. Chrome reset so
+   it reads as an inline glyph next to the id, not a form button. Shown only when the backend reported metadata. */
+
+.model-details-toggle {
+    margin-left: 0.4rem;
+    padding: 0;
+    font: inherit;
+    color: var(--admin-brand-navy);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+/* Add-variant action: a small, low-emphasis pill under the upstream id that clones this pin into another
+   same-upstream entry (a second exposed name for the same model, e.g. a different fixed reasoning effort). It
+   sits on its own line beneath the id so it reads as an action on the model rather than part of the id label;
+   the muted outline keeps it secondary to the pin checkbox and name input, which are the primary controls. */
+
+.model-add-variant {
+    display: block;
+    width: fit-content;
+    margin-top: 0.35rem;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.75rem;
+    color: var(--admin-brand-navy);
+    background: none;
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+    cursor: pointer;
+}
+
+.model-add-variant:hover:not(:disabled) {
+    background-color: var(--admin-surface-hover);
+}
+
+.model-add-variant:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+/* Detail row: the cell is a plain white gutter so the panel inside reads as a distinct, contained card rather
+   than a tinted strip welded to the row above. */
+
+.model-detail-row > td {
+    padding: 0;
+    background-color: var(--admin-surface-card);
+}
+
+/* Keep the wide detail panel from skewing the auto table-layout: a colspan cell otherwise lets its content's
+   max-content (notably a long description) widen the spanned data columns, so the model-name column jumps on
+   expand. max-width:0 removes the cell from intrinsic column sizing while it still fills the columns the other
+   rows defined, so the panel renders full width without disturbing the layout. */
+
+.model-detail-cell {
+    max-width: 0;
+}
+
+/* No separator between a model and its own expanded details: drop the bottom border of the row directly above
+   the panel so the dotted/solid line only ever divides one model from the next, not a model from its details.
+   For a pinned pair the identity column draws its own underline via .model-span (it row-spans both editor rows),
+   so that has to be cleared too; otherwise a stub line lingers under the pin/upstream columns. */
+
+.backend-table tr.model-row-details-open > td {
+    border-bottom: none;
+}
+
+.backend-table tr.model-row-details-open .model-span {
+    border-bottom: none;
+}
+
+/* Detail panel: a self-contained card, inset from the table edges and tied to its model by a left accent bar, so
+   the expanded block is unmistakably "details for this model" rather than a stray row. */
+
+.model-detail-panel {
+    /* Flush left and right so the panel's left edge lines up with the model-name column and its right edge with
+       the table edge; vertical margin only sets it off from the rows above and below. */
+    margin: 0.35rem 0 0.85rem;
+    padding: 0.55rem 0.9rem 0.65rem;
+    background-color: var(--admin-surface-panel);
+    border: 1px solid var(--admin-border-card);
+    border-left: 3px solid var(--admin-brand-navy);
+    border-radius: 0.4rem;
+}
+
+/* Panel heading: a small, quiet caption that labels the block as details. */
+
+.model-detail-heading {
+    margin: 0 0 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--admin-text-muted);
+}
+
+/* A single vertical column of "label : value" rows. Stacking (rather than a multi-column grid with
+   right-aligned values) keeps every value left-aligned right beside its label, so long values like a source URL
+   or description simply wrap within the value column instead of fighting the grid. */
+
+.model-detail-fields {
+    display: flex;
+    flex-direction: column;
+    margin: 0.25rem 0;
+}
+
+.model-detail-field {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+    border-bottom: 1px dotted var(--admin-border-dotted);
+}
+
+.model-detail-field dt {
+    flex: 0 0 12rem;
+    color: var(--admin-text-muted);
+}
+
+.model-detail-field dd {
+    flex: 1 1 auto;
+    /* Allow long values (URLs, prose) to wrap instead of forcing the row wider than the table. */
+    min-width: 0;
+    margin: 0;
+    text-align: left;
+}
+
+.model-detail-field dd a {
+    word-break: break-all;
+}
+
+/* Description can run to several lines: stack its value under the label so the prose gets the full width. */
+
+.model-detail-field-wide {
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+/* In a column-direction flex the label's flex-basis applies to its HEIGHT, so the row rule's 12rem basis would
+   make a 12rem-tall label box. Reset it to auto here so the label and its prose size to content. */
+
+.model-detail-field-wide dt {
+    flex: 0 0 auto;
+}
+
+.model-detail-field-wide dd {
+    color: var(--admin-text-secondary);
+}
+
+/* Pin checkbox column: kept narrow and centered so the model name stays the row's focal point. Centred
+   via text-align + vertical-align on the cell rather than display: flex, because turning a table cell into
+   a flex container disrupts the rowspan that welds the head and override rows together (the cell stops
+   participating in the table layout algorithm and the override row's Reasoning cell drifts left of where
+   the column boundary should be). text-align centres inline content (the checkbox reads as inline-block in
+   every browser we've seen), and vertical-align:middle keeps it on the row's text baseline. The checkbox
+   itself is also explicitly display:block + margin:auto as a belt-and-braces fallback for any UA that
+   boxes it differently. */
+
+.pin-column {
+    width: 3.5rem;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.pin-column input[type="checkbox"] {
+    display: block;
+    margin: 0 auto;
+}
+
+/* A compact row of controls sitting between the backend header and the table, kept around as scaffolding for
+   future selection-driven batch actions; today it holds no children but the spacing preserves the visual
+   rhythm when the page later adds select-all / pin-all buttons. */
+
+.backend-select-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.25rem 0 0.5rem;
+    font-size: 0.85rem;
+}
+
+.select-divider {
+    color: var(--admin-border-divider);
+}

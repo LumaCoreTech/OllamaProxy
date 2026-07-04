@@ -1,0 +1,52 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* The badge pill shape: the single source of truth for every badge on the admin surface. The padding unifies
+   the two slightly different values the old per-component copies used (0.1rem/0.5rem for state badges,
+   0.15rem/0.6rem for mode/reachability badges) onto the roomier of the two, which reads better for short
+   labels; because state, drift and mode badges now all render through this one rule, they match exactly. */
+
+.badge {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 1rem;
+}
+
+/* Neutral slate: informationally quiet labels (operating mode). */
+
+.badge-neutral {
+    color: var(--admin-text-secondary);
+    background-color: var(--admin-surface-code);
+}
+
+/* Green: a positive, healthy state (available model). */
+
+.badge-success {
+    color: var(--admin-success-text);
+    background-color: var(--admin-success-bg);
+}
+
+/* Red: a negative or error state (unavailable model). */
+
+.badge-danger {
+    color: var(--admin-danger-text);
+    background-color: var(--admin-danger-bg);
+}
+
+/* Blue: a purely informational state (discovered, not-yet-pinned model). */
+
+.badge-info {
+    color: var(--admin-info-text);
+    background-color: var(--admin-info-bg);
+}
+
+/* Amber: a caution state that needs attention but is not an error (drifted pin). The amber family keeps it
+   distinct from the green/red/blue state badges: the pin is still honored, just stale. */
+
+.badge-warning {
+    color: var(--admin-warning-text);
+    background-color: var(--admin-warning-bg);
+}

@@ -1,0 +1,60 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Capability chips: a model's resolved capabilities rendered as small pills, so a supported capability and an
+   inconclusive (unconfirmed) one are visually distinct. A capability that was conclusively probed as unsupported
+   is simply absent; the list shows what is known. */
+
+.caps-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.cap-chip {
+    display: inline-block;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.8rem;
+    border-radius: 0.75rem;
+    white-space: nowrap;
+}
+
+/* Supported: the capability is confirmed (by probe or backend metadata). The green family reads as a settled
+   positive fact. */
+
+.cap-chip-supported {
+    color: var(--admin-success-text);
+    background-color: var(--admin-success-bg);
+}
+
+/* Supported-but-unconfirmed: completion's fail-open case, where the probe stayed inconclusive but the model is
+   kept completion-capable and exposed, so this is still positive (green family). The dashed outline and help
+   cursor, plus the "?" in the label and the hover tooltip, mark it as "kept capable, just not verified":
+   distinct from a confirmed green chip without overstating it as an amber "off" one. */
+
+.cap-chip-supported-unconfirmed {
+    color: var(--admin-success-text);
+    background-color: var(--admin-success-bg);
+    border: 1px dashed var(--admin-success-text);
+    /* Offset the dashed border so the chip keeps the same height as its borderless siblings. */
+    padding: calc(0.05rem - 1px) calc(0.4rem - 1px);
+    cursor: help;
+}
+
+/* Inconclusive: the probe could not confirm the capability, so the flag is the conservative default rather
+   than a measured answer. The amber family marks it as "uncertain, not denied"; the "?" in the label and the
+   hover tooltip explain that the model may still support it. */
+
+.cap-chip-inconclusive {
+    color: var(--admin-warning-text);
+    background-color: var(--admin-warning-bg);
+    cursor: help;
+}
+
+/* No capability is supported or unconfirmed (e.g. an embedding-only model whose only flag was conclusively
+   negative): a muted placeholder instead of an empty cell. */
+
+.caps-none {
+    color: var(--admin-text-faint);
+}

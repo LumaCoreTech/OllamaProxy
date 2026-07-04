@@ -1,0 +1,351 @@
+@using System.Diagnostics
+@using OllamaProxy.Admin.Reconciliation
+@using OllamaProxy.Configuration
+@using OllamaProxy.Providers.Abstractions
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@* One backend card: a collapsible header (expand/collapse indicator, display name, mode badge) and the
+   expanded editor (settings form, advanced disclosure, models table, remove action). The card is the unit
+   the page's <c>foreach</c> renders once per draft backend. *@
+<section class="backend-card">
+	<button type="button"
+	        class="backend-card-header"
+	        @onclick="OnToggleExpand"
+	        aria-expanded="@(Expanded.ToString().ToLowerInvariant())"
+	        aria-controls="@EditorPanelId"
+	        aria-label="@(Expanded ? $"Collapse {DisplayName(Backend)}" : $"Expand {DisplayName(Backend)}")">
+		<span class="backend-expand-indicator">@(Expanded ? "▾" : "▸")</span>
+		<span class="backend-card-name">@DisplayName(Backend)</span>
+		@* Provider-family label as a quiet neutral pill so the operator can tell one backend's provider family
+		   from another (say vLLM from OpenAI) in the collapsed list without expanding the card. Rendered through
+		   the shared Badge primitive, same as the mode pill below. Suppressed when the provider type resolves to
+		   an empty label (a not-yet-set provider) so the header never shows a blank pill. *@
+		@if (!string.IsNullOrWhiteSpace(ProviderLabel))
+		{
+			<Badge Variant="BadgeVariant.Neutral" title="@($"Provider: {ProviderLabel}")">@ProviderLabel</Badge>
+		}
+		@* Operating-mode label as a quiet neutral pill, rendered through the shared Badge primitive so it shares
+		   one pill shape with the state and drift badges instead of re-declaring it locally. *@
+		<Badge Variant="BadgeVariant.Neutral" title="@ModeDescription(ProviderCatalog.ResolveMode(Backend.Options))">@ModeLabel(ProviderCatalog.ResolveMode(Backend.Options))</Badge>
+	</button>
+
+	@if (Expanded)
+	{
+		<div id="@EditorPanelId" class="backend-editor">
+			@* Connection/probing form kept at a comfortable form width so its inputs and prose never stretch to
+		   the card's full width; the card itself may grow wide to fit the model table below. *@
+			<BackendSettings
+				Backend="Backend"
+				Providers="ProviderCatalog.Providers"
+				IsBusy="IsBusy"
+				OnProviderTypeChanged="OnProviderTypeChanged"
+				OnModeChanged="OnModeChanged"
+				OnConfigurationChanged="OnConfigurationChanged"/>
+
+			@* Advanced settings: the rarely-changed knobs (default context window, exposure prefix, default
+		   reasoning effort, capability probing) kept behind a collapsed disclosure so the common case (name,
+		   URL, provider, key, mode) stays uncluttered. Several backends' advanced sections may be open at
+		   once; it is a local disclosure, not a single-selection accordion like the cards. *@
+			<BackendAdvanced
+				Backend="Backend"
+				Expanded="AdvancedExpanded"
+				IsBusy="IsBusy"
+				OnToggle="OnAdvancedToggle"
+				OnModelPrefixChanged="OnModelPrefixChanged"
+				OnConfigurationChanged="OnConfigurationChanged"/>
+
+			@* Combined model list: discovered models merged with this backend's registry pins, fetched lazily
+		   against the *draft* (its unsaved connection settings) and reconciled locally so every pin, unpin,
+		   or mode change re-renders from the cached snapshot without another round-trip. *@
+			<BackendModels
+				Backend="Backend"
+				State="State"
+				Reconciliation="Reconciliation"
+				IsBusy="IsBusy"
+				ModeIgnoresPins="ModeIgnoresPins"
+				DuplicateModelNames="DuplicateModelNames"
+				OnRefreshModels="OnRefreshModels"
+				OnProbeModels="OnProbeModels"
+				OnCancelProbe="OnCancelProbe"
+				OnTogglePin="OnTogglePin"
+				OnAddVariant="OnAddVariant"
+				OnToggleModelDetails="OnToggleModelDetails"
+				IsDetailsExpanded="IsDetailsExpanded"
+				GetPinnedName="GetPinnedName"
+				OnSetPinnedName="OnSetPinnedName"
+				GetPinnedReasoning="GetPinnedReasoning"
+				OnSetPinnedReasoning="OnSetPinnedReasoning"
+				GetContextOverride="GetContextOverride"
+				OnSetContextOverride="OnSetContextOverride"
+				OnSetPinnedCapability="OnSetPinnedCapability"/>
+
+			<div class="backend-editor-actions">
+				<button type="button"
+				        class="backend-remove"
+				        @onclick="OnRemove"
+				        disabled="@IsBusy">
+					Remove backend
+				</button>
+			</div>
+		</div>
+	}
+</section>
+
+@code {
+
+	/// <summary>
+	/// The shared empty default for <see cref="DuplicateModelNames"/>, using
+	/// <see cref="StringComparer.OrdinalIgnoreCase"/> so a forwarded empty set matches the comparer the models
+	/// table's membership checks expect. One shared instance avoids allocating a set per card render.
+	/// </summary>
+	private static readonly IReadOnlySet<string> EmptyDuplicateNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// The backend this card renders. The component holds no state of its own: the page owns
+	/// expansion, advanced-state, model-list state, and every setter that mutates the draft.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public DesiredBackend Backend { get; set; } = null!;
+
+	/// <summary>
+	/// Whether the card's editor is currently expanded. Driven by the page so only one backend is
+	/// expanded at a time and the expansion survives the model's local re-renders.
+	/// </summary>
+	[Parameter]
+	public bool Expanded { get; set; }
+
+	/// <summary>
+	/// A stable id for the editor panel so the card header can reference it with
+	/// <c>aria-controls</c> without depending on the user-editable backend name.
+	/// </summary>
+	private string EditorPanelId { get; } = $"backend-editor-{Guid.NewGuid():N}";
+
+	/// <summary>
+	/// Whether this card's advanced section is currently expanded. Driven by the page (per-backend
+	/// set, several cards can have advanced open simultaneously).
+	/// </summary>
+	[Parameter]
+	public bool AdvancedExpanded { get; set; }
+
+	/// <summary>
+	/// Whether the page is currently busy with a load or apply. Mirrored to every interactive control
+	/// in the card so the editor disables itself as a whole.
+	/// </summary>
+	[Parameter]
+	public bool IsBusy { get; set; }
+
+	/// <summary>
+	/// Whether this backend's effective mode ignores pins (plug-and-play). Forwarded to the models table
+	/// so it can hide the pin column and the available/unavailable counts.
+	/// </summary>
+	[Parameter]
+	public bool ModeIgnoresPins { get; set; }
+
+	/// <summary>
+	/// The set of client-facing model names this backend registers more than once, computed by the page from
+	/// the live draft. Forwarded unchanged to the models table, which marks each colliding pinned-name input
+	/// invalid inline for early, non-blocking feedback ahead of Apply's authoritative dry-run. Defaults to an
+	/// empty set so an unset parameter forwards a safe non-<see langword="null"/> value rather than overriding
+	/// the models table's own empty-set default with <see langword="null"/>.
+	/// </summary>
+	[Parameter]
+	public IReadOnlySet<string> DuplicateModelNames { get; set; } = EmptyDuplicateNames;
+
+	/// <summary>
+	/// The per-backend model-list state (cached raw snapshot, in-flight flag, last error).
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public ModelListState State { get; set; } = null!;
+
+	/// <summary>
+	/// The reconciliation result the page computed against the cached snapshot, or <see langword="null"/>
+	/// when no snapshot has loaded yet.
+	/// </summary>
+	[Parameter]
+	public ReconciliationResult? Reconciliation { get; set; }
+
+	/// <summary>
+	/// The page-supplied provider catalog. Forwarded to the settings form for the provider-type
+	/// dropdown. The component is intentionally agnostic about which catalog implementation is in use.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public IProviderCatalog ProviderCatalog { get; set; } = null!;
+
+	/// <summary>
+	/// Fired when the operator clicks the card header.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnToggleExpand { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks the Advanced disclosure.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnAdvancedToggle { get; set; }
+
+	/// <summary>
+	/// Fired when the operator picks a different provider type.
+	/// </summary>
+	[Parameter]
+	public EventCallback<string?> OnProviderTypeChanged { get; set; }
+
+	/// <summary>
+	/// Fired when the operator picks a different operating mode. The page uses this to write the new mode
+	/// and trigger a re-render so the reconciliation table refreshes against the new mode.
+	/// </summary>
+	[Parameter]
+	public EventCallback<OperatingMode?> OnModeChanged { get; set; }
+
+	/// <summary>
+	/// Fired when the operator edits the model-prefix field.
+	/// </summary>
+	[Parameter]
+	public EventCallback<string?> OnModelPrefixChanged { get; set; }
+
+	/// <summary>
+	/// Fired when the operator edits any plain-bound settings or advanced field (name, base URL, API key,
+	/// context length, reasoning effort, probing options). The page uses this to re-evaluate its dirty state
+	/// so the Apply/Discard gate and unsaved-changes guard refresh. Forwarded verbatim to both
+	/// <see cref="BackendSettings"/> and <see cref="BackendAdvanced"/>.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnConfigurationChanged { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks the Refresh button in the models table.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnRefreshModels { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks the Probe capabilities button.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnProbeModels { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks Cancel during a streaming probe.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnCancelProbe { get; set; }
+
+	/// <summary>
+	/// Fired when the operator toggles a model's pin checkbox.
+	/// </summary>
+	[Parameter]
+	public EventCallback<ReconciledModel> OnTogglePin { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks "+ variant" to clone a pin under a new same-upstream name.
+	/// </summary>
+	[Parameter]
+	public EventCallback<ReconciledModel> OnAddVariant { get; set; }
+
+	/// <summary>
+	/// Fired when the operator expands or collapses a model's metadata detail panel.
+	/// </summary>
+	[Parameter]
+	public EventCallback<ReconciledModel> OnToggleModelDetails { get; set; }
+
+	/// <summary>
+	/// Returns whether the detail panel for the given model is currently expanded.
+	/// </summary>
+	[Parameter]
+	public Func<ReconciledModel, bool> IsDetailsExpanded { get; set; } = null!;
+
+	/// <summary>
+	/// Returns a pinned model's client-facing name for the editor field.
+	/// </summary>
+	[Parameter]
+	public Func<ReconciledModel, string> GetPinnedName { get; set; } = null!;
+
+	/// <summary>
+	/// Fired when the operator edits a pinned model's client-facing name.
+	/// </summary>
+	[Parameter]
+	public EventCallback<PinnedNameEdit> OnSetPinnedName { get; set; }
+
+	/// <summary>
+	/// Returns a pinned model's reasoning-effort override for the selector.
+	/// </summary>
+	[Parameter]
+	public Func<ReconciledModel, ReasoningEffort?> GetPinnedReasoning { get; set; } = null!;
+
+	/// <summary>
+	/// Fired when the operator changes a pinned model's reasoning-effort override.
+	/// </summary>
+	[Parameter]
+	public EventCallback<PinnedReasoningEdit> OnSetPinnedReasoning { get; set; }
+
+	/// <summary>
+	/// Returns a pinned model's context-length override for the editor field.
+	/// </summary>
+	[Parameter]
+	public Func<ReconciledModel, int?> GetContextOverride { get; set; } = null!;
+
+	/// <summary>
+	/// Fired when the operator edits a pinned model's context-length override.
+	/// </summary>
+	[Parameter]
+	public EventCallback<PinnedContextEdit> OnSetContextOverride { get; set; }
+
+	/// <summary>
+	/// Fired when the operator toggles one of a pinned model's capability flags.
+	/// </summary>
+	[Parameter]
+	public EventCallback<PinnedCapabilityEdit> OnSetPinnedCapability { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks the Remove backend button.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnRemove { get; set; }
+
+	/// <summary>
+	/// Gets the provider-family label shown as a quiet pill in the card header (for example <c>OpenAI</c>),
+	/// resolved from the backend's <see cref="BackendOptions.ProviderType"/> through the catalog. An unset or
+	/// unknown provider type resolves to an empty string, and the header suppresses the pill in that case.
+	/// </summary>
+	private string ProviderLabel => ProviderCatalog.DisplayNameFor(Backend.Options.ProviderType);
+
+	/// <summary>
+	/// Gets a backend's display name for the card header, falling back to a placeholder when the operator
+	/// has not named it yet.
+	/// </summary>
+	private static string DisplayName(DesiredBackend backend) => string.IsNullOrWhiteSpace(backend.Name) ? "(unnamed backend)" : backend.Name;
+
+	/// <summary>
+	/// Maps a backend's effective operating mode to its human-readable badge label.
+	/// </summary>
+	private static string ModeLabel(OperatingMode mode) => mode switch
+	{
+		OperatingMode.PlugAndPlay => "Plug-and-play",
+		OperatingMode.Hybrid      => "Hybrid",
+		OperatingMode.Explicit    => "Explicit",
+		var _                     => throw new UnreachableException($"Unhandled operating mode '{mode}'.")
+	};
+
+	/// <summary>
+	/// Maps a backend's effective operating mode to a short tooltip description.
+	/// </summary>
+	private static string ModeDescription(OperatingMode mode) => mode switch
+	{
+		OperatingMode.PlugAndPlay =>
+			"Every model the backend reports is exposed automatically. Registry pins have no effect.",
+
+		OperatingMode.Hybrid =>
+			"Discovered models are exposed automatically, and registry entries override their settings or stand alone.",
+
+		OperatingMode.Explicit =>
+			"Only pinned registry models are exposed. Discovered models are listed as candidates.",
+
+		var _ => throw new UnreachableException($"Unhandled operating mode '{mode}'.")
+	};
+
+}

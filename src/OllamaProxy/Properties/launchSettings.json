@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    // Single profile: applicationUrl targets the PROXY port (:11434), which is what a developer hits. It
+    // becomes ASPNETCORE_URLS, which the inner proxy host inherits and binds. The outer chassis pins its own
+    // admin port (:11435) via UseUrls regardless, so the two hosts never collide.
+    "OllamaProxy (http)": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:12434",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

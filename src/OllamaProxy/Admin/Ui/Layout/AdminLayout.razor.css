@@ -1,0 +1,187 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+.admin-shell {
+    display: flex;
+    flex-direction: column;
+    /* App-shell scroll model: the shell is pinned to the viewport and never scrolls itself (overflow: hidden).
+       The header stays fixed at the top while .admin-shell-main below is the sole scroll container. This lets a
+       wide table scroll horizontally under a header that always spans the full viewport width, instead of the
+       header ending at the viewport edge while the page scrolls past it. */
+    height: 100vh;
+    overflow: hidden;
+    margin: 0;
+    /* Width of the centered header bar (see .admin-shell-bar). Only the header uses this now: the dark bar spans
+       the viewport while its inner content is held to this width so the brand and tabs sit in a comfortable
+       column. Page content no longer shares this cap; each routed page owns its width and centering, so a wide
+       table can grow past this width and scroll while the header above it stays a fixed, centered bar. */
+    --admin-content-width: var(--admin-layout-content-width);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--admin-text-primary);
+    background-color: var(--admin-surface-page);
+}
+
+.admin-shell-header {
+    /* Full-width dark bar; the inner .admin-shell-bar carries the width limit so the bar still spans edge to edge.
+       flex: 0 0 auto keeps it at its natural height (never shrinking) and outside the scroll container below, so
+       it stays fixed at the top across the full viewport width while the content scrolls. */
+    flex: 0 0 auto;
+    padding: 0.75rem 1.5rem;
+    color: var(--admin-text-on-dark);
+    background-color: var(--admin-brand-navy);
+}
+
+.admin-shell-bar {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    width: 100%;
+    max-width: var(--admin-content-width);
+    margin: 0 auto;
+}
+
+/* Brand keeps its own baseline pairing so the bar can center-align the taller tab row against it. */
+
+.admin-shell-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.admin-shell-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+
+.admin-shell-subtitle {
+    font-size: 0.9rem;
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+.admin-shell-nav {
+    display: flex;
+    gap: 0.25rem;
+}
+
+/*
+ * NavLink is a child component: the <a> it renders does NOT receive this component's scope attribute,
+ * so a bare ".admin-shell-tab" selector never matches (the rendered <a> stays default-link styled).
+ * ::deep from the locally-authored <nav> (which DOES carry the scope) reaches the rendered <a>.
+ * The class is our own, so this stays update-safe (no third-party internals involved).
+ * Underline-style tabs: a transparent bottom border reserves the indicator space so switching tabs
+ * does not shift the row vertically. NavLink adds the "active" class on route match.
+ */
+
+.admin-shell-nav ::deep .admin-shell-tab {
+    display: flex;
+    align-items: center;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.9rem;
+    color: var(--admin-text-on-dark-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0.3rem 0.3rem 0 0;
+    transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.admin-shell-nav ::deep .admin-shell-tab:hover {
+    color: var(--admin-text-on-dark);
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.admin-shell-nav ::deep .admin-shell-tab.active {
+    color: var(--admin-text-on-dark);
+    border-bottom-color: var(--admin-brand-accent);
+}
+
+/* Settings dropdown group: shows its label by default and reveals the submenu on hover/focus. The menu is
+   positioned beneath the label and styled like the header so the submenu items feel attached to the bar. */
+
+.admin-shell-tab-group {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.admin-shell-tab-group-label {
+    padding: 0.35rem 0.85rem;
+    font-size: 0.9rem;
+    font: inherit;
+    color: var(--admin-text-on-dark-muted);
+    background: none;
+    border-bottom: 2px solid transparent;
+    border-top: none;
+    border-right: none;
+    border-left: none;
+    border-radius: 0.3rem 0.3rem 0 0;
+    cursor: pointer;
+}
+
+.admin-shell-tab-group:hover .admin-shell-tab-group-label,
+.admin-shell-tab-group:focus-within .admin-shell-tab-group-label {
+    color: var(--admin-text-on-dark);
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.admin-shell-tab-group-menu {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    display: none;
+    flex-direction: column;
+    min-width: 10rem;
+    padding: 0.4rem;
+    background-color: var(--admin-brand-navy);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0 0.4rem 0.4rem 0.4rem;
+    box-shadow: var(--admin-shadow-dropdown);
+    z-index: 100;
+}
+
+.admin-shell-tab-group:hover .admin-shell-tab-group-menu,
+.admin-shell-tab-group:focus-within .admin-shell-tab-group-menu {
+    display: flex;
+}
+
+.admin-shell-nav ::deep .admin-shell-tab-group-item {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.9rem;
+    color: var(--admin-text-on-dark-muted);
+    text-decoration: none;
+    border-radius: 0.25rem;
+    white-space: nowrap;
+}
+
+.admin-shell-nav ::deep .admin-shell-tab-group-item:hover {
+    color: var(--admin-text-on-dark);
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.admin-shell-nav ::deep .admin-shell-tab-group-item.active {
+    color: var(--admin-text-on-dark);
+    background-color: rgba(var(--admin-brand-accent-rgb), 0.2);
+}
+
+/* Sole scroll container in the app-shell model: it takes the remaining height under the fixed header and scrolls
+   both axes. min-height: 0 is essential. Without it a flex child cannot shrink below its content height, so the
+   column would push the shell taller than the viewport and scroll the document instead. overflow: auto keeps the
+   horizontal scrollbar at the bottom of this region (reachable) when a page is wider than the viewport. */
+
+.admin-shell-main {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 1.5rem;
+}
+
+/* Neutral full-width canvas. The shell no longer caps the reading width here; each routed page owns its own
+   width and centering instead. Narrow form pages cap and center themselves (see .configuration-page, .home-page).
+   Wide table pages grow past the old shared cap (see .models-page, .backends-page) and scroll horizontally inside
+   .admin-shell-main. Keeping the container width-neutral lets a page be exactly as wide as its content needs,
+   so the container can neither clip a wide table nor off-center it. */
+
+.admin-shell-content {
+    width: 100%;
+}

@@ -1,0 +1,151 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/*
+ * Admin color, spacing, and shadow theme.
+ *
+ * This is the single source of truth for the admin surface's visual constants.
+ * Component-scoped stylesheets reference these custom properties so a palette
+ * adjustment happens in exactly one place instead of drifting across many files.
+ */
+
+:root {
+    /* ----------------------------------------------------------------------
+     * Brand
+     * -------------------------------------------------------------------- */
+    --admin-brand-navy: #16213e;
+    --admin-brand-accent: #4dabf7;
+    --admin-brand-accent-rgb: 77,   171,   247;
+
+    /* ----------------------------------------------------------------------
+     * Text
+     * -------------------------------------------------------------------- */
+    --admin-text-primary: #1a1a2e;
+    --admin-text-secondary: #44475a;
+    --admin-text-muted: #6b7280;
+    --admin-text-faint: #9ca3af;
+    --admin-text-on-dark: #ffffff;
+    --admin-text-on-dark-muted: #c7ccd8;
+
+    /* ----------------------------------------------------------------------
+     * Surfaces
+     * -------------------------------------------------------------------- */
+    --admin-surface-page: #f4f5f7;
+    --admin-surface-card: #ffffff;
+    --admin-surface-panel: #f7f8fa;
+    --admin-surface-tray: #f9fafb;
+    --admin-surface-info: #eef2f9;
+    --admin-surface-code: #f1f3f5;
+    --admin-surface-code-alt: #f3f4f6;
+    --admin-surface-hover: #eef0f3;
+
+    /* ----------------------------------------------------------------------
+     * Borders
+     * -------------------------------------------------------------------- */
+    --admin-border-card: #e2e4e8;
+    --admin-border-table: #eceef1;
+    --admin-border-input: #c8ccd2;
+    --admin-border-dotted: #e2e4e8;
+    --admin-border-muted: #e1e3ea;
+    --admin-border-divider: #b6b9c0;
+    --admin-border-info: #d4dcec;
+
+    /* ----------------------------------------------------------------------
+     * Semantic states
+     * -------------------------------------------------------------------- */
+
+    /* Success */
+    --admin-success-text: #0f5132;
+    --admin-success-bg: #d1e7dd;
+
+    /* Warning / amber */
+    --admin-warning-text: #664d03;
+    --admin-warning-bg: #fff3cd;
+    --admin-warning-bg-light: #fffbf0;
+    --admin-warning-bg-soft: #fff8e1;
+    --admin-warning-border: #f0d67a;
+    --admin-warning-border-light: #ffe69c;
+    --admin-warning-dot: #997404;
+    --admin-warning-icon: #b58a1b;
+    --admin-warning-hint: #7a5c04;
+
+    /* Danger */
+    --admin-danger-text: #842029;
+    --admin-danger-bg: #f8d7da;
+    --admin-danger-bg-light: #fdf2f2;
+    --admin-danger-border: #f1aeb5;
+    --admin-danger-validation: #b91c1c;
+    --admin-danger-validation-bg: #fde8e8;
+    --admin-danger-validation-text: #7f1d1d;
+
+    /* Info */
+    --admin-info-text: #084298;
+    --admin-info-bg: #cfe2ff;
+    --admin-info-muted: #1c7ed6;
+
+    /* ----------------------------------------------------------------------
+     * Spinner / accents
+     * -------------------------------------------------------------------- */
+    --admin-spinner-track: #c2cbe0;
+    --admin-spinner-head: #3056a0;
+
+    /* ----------------------------------------------------------------------
+     * Shadows
+     * -------------------------------------------------------------------- */
+    --admin-shadow-card: 0 -2px 6px rgba(0, 0, 0, 0.05);
+    --admin-shadow-dropdown: 0 4px 12px rgba(0, 0, 0, 0.25);
+    --admin-shadow-logo-glow: 0 0 2.5rem rgba(77, 171, 247, 0.35);
+
+    /* ----------------------------------------------------------------------
+     * Sizing
+     * -------------------------------------------------------------------- */
+    --admin-layout-content-width: 64rem;
+    --admin-reading-width: 52rem;
+    --admin-prose-width: 42rem;
+}
+
+/*
+ * Visually hidden: content remains available to assistive technologies (screen readers) while being
+ * removed from the visual page flow. Use this for captions, labels, or headings that are redundant
+ * for sighted users but needed for accessible structure.
+ */
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/*
+ * Checkbox label primitive: a checkbox laid out inline beside its text (box, gap, then label).
+ * Shared here (not in a component stylesheet) because two Admin components render it: the probe
+ * toggles in BackendAdvanced and the capability checkboxes in BackendModels. Blazor CSS isolation
+ * scopes each component's own stylesheet to that component alone, so a copy in one component's
+ * .razor.css would never reach the other's markup. The global theme is the single source of truth.
+ */
+
+.backend-check {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--admin-brand-navy);
+}
+
+.backend-check input {
+    margin: 0;
+}
+
+.backend-check input:disabled {
+    background-color: var(--admin-surface-code);
+    opacity: 0.7;
+}

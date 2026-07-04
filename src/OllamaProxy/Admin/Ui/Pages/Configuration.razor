@@ -1,0 +1,523 @@
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@page "/configuration/general"
+@using System.Text.Json
+@implements IAsyncDisposable
+@inject IAdminModelService AdminModelService
+@inject IJSRuntime         JS
+@inject NavigationManager  Nav
+
+<PageTitle>OllamaProxy Admin — General Configuration</PageTitle>
+
+<div class="configuration-page">
+	<div class="configuration-header">
+		<h1>General Configuration</h1>
+	</div>
+
+	@if (IsDirty)
+	{
+		<DirtyBanner Visible="true"/>
+	}
+
+	@if (mDraft is null)
+	{
+		<p class="configuration-status">Loading configuration…</p>
+	}
+	else
+	{
+		<EditForm EditContext="mEditContext" class="configuration-form">
+			<DataAnnotationsValidator/>
+
+			<section class="configuration-section">
+				<h2 class="configuration-section-title">Listener</h2>
+				<p class="configuration-section-help">
+					The address the proxy listens on. Default is <code>http://localhost:11434</code>;
+					use <code>http://0.0.0.0:11434</code> to listen on all interfaces (for example inside a container).
+				</p>
+
+				<label class="configuration-field">
+					<span class="configuration-label">Listen URL</span>
+					<InputText @bind-Value="mDraft.ListenUrl" class="configuration-input" disabled="@IsBusy"/>
+					<ValidationMessage For="() => mDraft.ListenUrl" class="configuration-validation"/>
+				</label>
+
+				<p class="configuration-warning">
+					<strong>Security note:</strong> binding to <code>0.0.0.0</code> or another public interface exposes the
+					proxy on the network. The Ollama-compatible endpoint does not perform authentication; protect it with a
+					firewall, reverse proxy, or private network.
+				</p>
+			</section>
+
+			<section class="configuration-section">
+				<h2 class="configuration-section-title">Request tracing</h2>
+				<p class="configuration-section-help">
+					Records one indented JSON file per request/response flow for debugging. Credentials are redacted
+					and inline attachments are replaced with metadata placeholders by default.
+				</p>
+
+				<label class="configuration-field configuration-field-inline">
+					<InputCheckbox @bind-Value="mDraft.RequestTracing.Enabled" disabled="@IsBusy"/>
+					<span class="configuration-label">Enable request tracing</span>
+				</label>
+
+				@if (mDraft.RequestTracing.Enabled)
+				{
+					<label class="configuration-field">
+						<span class="configuration-label">Output directory</span>
+						<InputText @bind-Value="mDraft.RequestTracing.Directory" class="configuration-input" disabled="@IsBusy"/>
+						<span class="configuration-field-hint">
+							Relative paths are resolved against the application directory; under the Windows Service that
+							is <code>%ProgramData%\OllamaProxy\data</code>.
+						</span>
+						<ValidationMessage For="() => mDraft.RequestTracing.Directory" class="configuration-validation"/>
+					</label>
+
+					<label class="configuration-field">
+						<span class="configuration-label">Maximum trace files</span>
+						<InputNumber @bind-Value="mDraft.RequestTracing.MaxFiles" class="configuration-input configuration-input-narrow" disabled="@IsBusy"/>
+						<ValidationMessage For="() => mDraft.RequestTracing.MaxFiles" class="configuration-validation"/>
+					</label>
+
+					<label class="configuration-field configuration-field-inline">
+						<InputCheckbox @bind-Value="mDraft.RequestTracing.RedactAttachments" disabled="@IsBusy"/>
+						<span class="configuration-label">Redact inline attachments</span>
+					</label>
+				}
+			</section>
+		</EditForm>
+
+		<ApplyBar
+			@ref="mApplyBar"
+			ShowEnvironmentKeyHint="false"
+			StructuralError="@StructuralError"
+			IsBusy="@IsBusy"
+			IsApplying="@mIsApplying"
+			IsDiscarding="@mIsLoading"
+			CanDiscard="@IsDirty"
+			CanApply="@IsDirty"
+			OnApply="@ApplyAsync"
+			OnDiscard="@DiscardAsync"/>
+
+		<ApplyResultBanner Outcome="mApplyResult?.Outcome" Errors="mApplyResult?.Errors"/>
+	}
+</div>
+
+@code {
+
+	/// <summary>
+	/// The editable draft of the global proxy configuration, or <see langword="null"/> until the first load completes.
+	/// </summary>
+	private DesiredProxyState? mDraft;
+
+	/// <summary>
+	/// The edit context used for data-annotation validation of the draft. Re-created on every successful load
+	/// so field state and validation messages are tied to the current draft instance.
+	/// </summary>
+	private EditContext? mEditContext;
+
+	/// <summary>
+	/// The rendered sync bar, captured so the Ctrl+Enter shortcut can move focus straight to the Apply/Discard
+	/// controls. <see langword="null"/> until the draft has loaded and the bar has rendered.
+	/// </summary>
+	private ApplyBar? mApplyBar;
+
+	/// <summary>
+	/// Whether a configuration load is currently running.
+	/// </summary>
+	private bool mIsLoading;
+
+	/// <summary>
+	/// Whether an apply is currently running.
+	/// </summary>
+	private bool mIsApplying;
+
+	/// <summary>
+	/// The outcome of the most recent apply, or <see langword="null"/> before the first one.
+	/// </summary>
+	private ApplyResult? mApplyResult;
+
+	/// <summary>
+	/// The JSON snapshot of the draft as it stood when the last load succeeded, used by <see cref="IsDirty"/>
+	/// to detect edits.
+	/// </summary>
+	private string? mLoadedSnapshotJson;
+
+	/// <summary>
+	/// The <see cref="IDisposable"/> token for the in-app navigation guard.
+	/// </summary>
+	private IDisposable? mLocationChangingRegistration;
+
+	/// <summary>
+	/// Cancellation scope for the in-flight load or apply.
+	/// </summary>
+	private CancellationTokenSource? mCts;
+
+	/// <summary>
+	/// The loaded <c>adminDirtyGuard</c> JS module, imported on the first interactive render and used to push the
+	/// dirty status to the browser so <see langword="beforeunload"/> knows whether to confirm.
+	/// </summary>
+	private IJSObjectReference? mDirtyModule;
+
+	/// <summary>
+	/// The loaded <c>adminCommitShortcut</c> JS module, imported on the first interactive render. It owns a
+	/// window-level <c>keydown</c> listener that watches for Ctrl+Enter and calls back into
+	/// <see cref="JumpToCommitBarAsync"/>, giving the operator a keyboard jump to the commit bar from anywhere on
+	/// the page. <see langword="null"/> during prerender and after <see cref="DisposeAsync"/>.
+	/// </summary>
+	private IJSObjectReference? mCommitShortcutModule;
+
+	/// <summary>
+	/// The <see cref="DotNetObjectReference{T}"/> to this component handed to <see cref="mCommitShortcutModule"/>
+	/// so its Ctrl+Enter listener can invoke <see cref="JumpToCommitBarAsync"/>. Held for the component's lifetime
+	/// and disposed in <see cref="DisposeAsync"/> so the interop handle is not leaked.
+	/// </summary>
+	private DotNetObjectReference<Configuration>? mCommitShortcutRef;
+
+	/// <summary>
+	/// Serializes every <c>setDirty</c> push to the JS dirty-guard module so concurrent renders cannot let an older
+	/// "clean" push overwrite a newer "dirty" one.
+	/// </summary>
+	private readonly SemaphoreSlim mDirtyPushLock = new(1, 1);
+
+	/// <summary>
+	/// Whether any operation is currently running and the UI should disable inputs.
+	/// </summary>
+	private bool IsBusy => mIsLoading || mIsApplying;
+
+	/// <summary>
+	/// Whether the current draft differs from the last loaded snapshot.
+	/// </summary>
+	private bool IsDirty => mLoadedSnapshotJson is not null &&
+	                        mDraft is not null &&
+	                        JsonSerializer.Serialize(mDraft) != mLoadedSnapshotJson;
+
+	/// <summary>
+	/// Whether Apply can be invoked: a draft exists, nothing is busy, the draft has unsaved changes, and there are no
+	/// validation errors.
+	/// </summary>
+	private bool CanApply => mDraft is not null &&
+	                         !IsBusy &&
+	                         IsDirty &&
+	                         mEditContext is not null &&
+	                         !mEditContext.GetValidationMessages().Any();
+
+	/// <summary>
+	/// Gets the blocking problem that makes the draft impossible to apply, or <see langword="null"/> when it is
+	/// sound. The general configuration page has no structural key problems the way the backend list does, so this
+	/// simply surfaces the data-annotation validation state: any outstanding validation message blocks Apply and
+	/// shows the fix-first status in the <see cref="ApplyBar"/>. This mirrors the inline status the page showed
+	/// before it adopted the shared bar.
+	/// </summary>
+	private string? StructuralError => mEditContext?.GetValidationMessages().Any() == true
+		                                   ? "Fix validation errors before applying."
+		                                   : null;
+
+	/// <summary>
+	/// Moves keyboard focus to the sync bar in response to the Ctrl+Enter shortcut handled by
+	/// <c>adminCommitShortcut.js</c>. It lets the operator jump to the Apply and Discard controls from anywhere on
+	/// the page without scrolling or tabbing back down. Invoked by the JS module on the interop thread.
+	/// </summary>
+	/// <returns>A task that completes once focus has moved, or immediately if the bar has not rendered yet.</returns>
+	[JSInvokable]
+	public async Task JumpToCommitBarAsync()
+	{
+		if (mApplyBar is not null)
+		{
+			await mApplyBar.FocusAsync();
+		}
+	}
+
+	/// <inheritdoc/>
+	protected override async Task OnInitializedAsync()
+	{
+		// Register the in-app navigation guard before the first render. The handler consults IsDirty and prompts
+		// the operator before letting a route change commit when the draft has unsaved edits.
+		mLocationChangingRegistration = Nav.RegisterLocationChangingHandler(ConfirmNavigationAsync);
+
+		await LoadAsync();
+
+		await base.OnInitializedAsync();
+	}
+
+	/// <summary>
+	/// Clears a stale success banner when the operator makes any configuration-affecting edit after a successful
+	/// apply. Wired to <see cref="EditContext.OnFieldChanged"/> so the reset happens before the next render.
+	/// </summary>
+	private void OnDraftFieldChanged(object? sender, FieldChangedEventArgs e)
+	{
+		if (mApplyResult?.Outcome == ApplyOutcome.Applied)
+		{
+			mApplyResult = null;
+		}
+	}
+
+	/// <inheritdoc/>
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			try
+			{
+				mDirtyModule = await JS.InvokeAsync<IJSObjectReference>("import", "./adminDirtyGuard.js")
+					               .ConfigureAwait(true);
+				await mDirtyModule.InvokeVoidAsync("attach").ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// Circuit torn down between prerender and interactive render; nothing to attach.
+				return;
+			}
+			catch (JSException ex)
+			{
+				throw new InvalidOperationException(
+					"Failed to initialize the admin unsaved-changes guard.",
+					ex);
+			}
+
+			try
+			{
+				// Wire up the Ctrl+Enter jump to the commit bar. This is a pure accessibility convenience, so its
+				// failure is swallowed rather than surfaced: plain tabbing still reaches the bar. The module keeps a
+				// DotNetObjectReference to this component so its keydown listener can call JumpToCommitBarAsync();
+				// it is disposed alongside the module in DisposeAsync().
+				mCommitShortcutRef = DotNetObjectReference.Create(this);
+				mCommitShortcutModule = await JS.InvokeAsync<IJSObjectReference>("import", "./adminCommitShortcut.js")
+					                        .ConfigureAwait(true);
+
+				await mCommitShortcutModule.InvokeVoidAsync("attach", mCommitShortcutRef).ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// The circuit was torn down mid-import; nothing to attach and nothing to clean up beyond the
+				// reference, which DisposeAsync handles.
+				return;
+			}
+			catch (JSException)
+			{
+				// The shortcut module failed to load. The keyboard jump is unavailable, but every other path to
+				// the commit bar still works, so there is nothing to report to the operator.
+			}
+		}
+
+		// Push the current dirty status to the JS module on every render so the browser's beforeunload guard
+		// agrees with the .NET truth.
+		await PushDirtyStateAsync(IsDirty).ConfigureAwait(true);
+
+		await base.OnAfterRenderAsync(firstRender);
+	}
+
+	/// <summary>
+	/// Loads the current configuration into a fresh draft and snapshot. Preserves any existing
+	/// <see cref="mApplyResult"/> so a successful apply can still show its banner after the reload.
+	/// </summary>
+	private async Task LoadAsync()
+	{
+		if (mIsLoading)
+		{
+			return;
+		}
+
+		if (mCts != null) await mCts.CancelAsync();
+		mCts = new CancellationTokenSource();
+		CancellationToken token = mCts.Token;
+
+		mIsLoading = true;
+		StateHasChanged();
+
+		try
+		{
+			DesiredProxyState draft = await AdminModelService
+				                          .GetEditableStateAsync(token)
+				                          .ConfigureAwait(true);
+
+			if (mEditContext is not null)
+			{
+				mEditContext.OnFieldChanged -= OnDraftFieldChanged;
+			}
+
+			mDraft = draft;
+			mEditContext = new EditContext(draft);
+			mEditContext.OnFieldChanged += OnDraftFieldChanged;
+			mLoadedSnapshotJson = JsonSerializer.Serialize(draft);
+		}
+		catch (OperationCanceledException)
+		{
+			// The operation was superseded by another load/apply or the circuit is being torn down; abandon it.
+		}
+		finally
+		{
+			mIsLoading = false;
+			await InvokeAsync(StateHasChanged);
+		}
+	}
+
+	/// <summary>
+	/// Reloads the draft from the live configuration, discarding any unsaved edits, and clears the apply banner.
+	/// This is the explicit discard action; the post-apply reload goes through <see cref="LoadAsync"/> directly so
+	/// the success banner survives.
+	/// </summary>
+	/// <returns>A task that completes when the reload has finished or been cancelled.</returns>
+	private async Task DiscardAsync()
+	{
+		mApplyResult = null;
+		await LoadAsync().ConfigureAwait(true);
+	}
+
+	/// <summary>
+	/// Applies the edited configuration to disk and recycles the inner proxy host.
+	/// </summary>
+	private async Task ApplyAsync()
+	{
+		if (mDraft is null || !CanApply)
+		{
+			return;
+		}
+
+		if (mCts != null) await mCts.CancelAsync();
+		mCts = new CancellationTokenSource();
+		CancellationToken token = mCts.Token;
+
+		mIsApplying = true;
+		mApplyResult = null;
+		StateHasChanged();
+
+		try
+		{
+			ApplyResult result = await AdminModelService
+				                     .ApplyDesiredStateAsync(mDraft, token)
+				                     .ConfigureAwait(true);
+
+			mApplyResult = result;
+
+			if (result.Success)
+			{
+				// Re-load so the snapshot is clean and the draft reflects the applied state.
+				await LoadAsync();
+			}
+		}
+		catch (OperationCanceledException)
+		{
+			// The circuit was torn down or the operation was superseded; no result should be shown.
+		}
+		finally
+		{
+			mIsApplying = false;
+			await InvokeAsync(StateHasChanged);
+		}
+	}
+
+	/// <summary>
+	/// Prompts the operator before leaving the page with unsaved changes.
+	/// </summary>
+	private async ValueTask ConfirmNavigationAsync(LocationChangingContext context)
+	{
+		if (!IsDirty)
+		{
+			return;
+		}
+
+		try
+		{
+			bool discard = await JS
+				               .InvokeAsync<bool>(
+					               "confirm",
+					               "You have unsaved changes. Leave this page and discard them?")
+				               .ConfigureAwait(true);
+
+			if (!discard)
+			{
+				context.PreventNavigation();
+			}
+		}
+		catch (JSDisconnectedException)
+		{
+			// Circuit torn down while waiting for the answer; let the framework decide.
+		}
+	}
+
+	/// <summary>
+	/// Pushes the current dirty status to the JS guard module, serialized so older pushes cannot overwrite newer ones.
+	/// </summary>
+	private async Task PushDirtyStateAsync(bool isDirty)
+	{
+		if (mDirtyModule is null)
+		{
+			return;
+		}
+
+		await mDirtyPushLock.WaitAsync().ConfigureAwait(true);
+		try
+		{
+			await mDirtyModule.InvokeVoidAsync("setDirty", isDirty).ConfigureAwait(true);
+		}
+		catch (JSDisconnectedException)
+		{
+			// The circuit was torn down between the render and the push; the page is gone.
+		}
+		catch (JSException)
+		{
+			// The module reference is stale or unavailable; the next render will retry with the current state.
+		}
+		finally
+		{
+			mDirtyPushLock.Release();
+		}
+	}
+
+	/// <inheritdoc/>
+	public async ValueTask DisposeAsync()
+	{
+		if (mCts != null) await mCts.CancelAsync();
+		mCts?.Dispose();
+		mLocationChangingRegistration?.Dispose();
+
+		if (mDirtyModule is not null)
+		{
+			try
+			{
+				await mDirtyModule.InvokeVoidAsync("detach").ConfigureAwait(true);
+				await mDirtyModule.DisposeAsync().ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// Circuit gone; nothing to detach.
+			}
+			catch (JSException)
+			{
+				// The module was already detached or otherwise unreachable; nothing remains to clean up.
+			}
+
+			mDirtyModule = null;
+		}
+
+		// Detach the Ctrl+Enter listener so it cannot fire on a recycled circuit, then dispose the module. The
+		// DotNetObjectReference is disposed unconditionally below, even if the module never loaded (an early circuit
+		// teardown), so the interop handle is never leaked.
+		if (mCommitShortcutModule is not null)
+		{
+			try
+			{
+				await mCommitShortcutModule.InvokeVoidAsync("detach").ConfigureAwait(true);
+				await mCommitShortcutModule.DisposeAsync().ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// The circuit is already gone; the listener cannot fire from a torn-down circuit.
+			}
+			catch (JSException)
+			{
+				// The module was already detached or its state is otherwise unreachable; nothing to do.
+			}
+
+			mCommitShortcutModule = null;
+		}
+
+		mCommitShortcutRef?.Dispose();
+		mCommitShortcutRef = null;
+
+		mDirtyPushLock.Dispose();
+	}
+
+}

@@ -1,0 +1,160 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Sync bar: the single commit point for all staged pin edits. Sticky to the bottom so it stays reachable
+   while scrolling a long backend list. flex-wrap lets the environment-only hint flow onto a second row
+   inside the bar without stretching it (the hint's flex-basis: 100% forces the wrap). */
+
+.sync-bar {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1.25rem;
+    padding: 0.75rem 1rem;
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-card);
+    border-radius: 0.5rem;
+    box-shadow: var(--admin-shadow-card);
+}
+
+/* flex-basis 0 (not auto) is what keeps the commit buttons on the status row when the bar is narrow: with a
+   basis of 0 the status does not reserve its full text width during line breaking, so the policy and the action
+   group still fit beside it and the long message simply wraps into the space that is left. On a wide bar (the
+   Backends page) the status grows to fill the row and stays on one line, so this changes nothing there.
+   min-width: 0 lets the text actually wrap rather than force an overflow. */
+
+.sync-bar-status {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 0.9rem;
+}
+
+.sync-bar-clean {
+    color: var(--admin-text-secondary);
+}
+
+.sync-bar-dirty {
+    font-weight: 600;
+    color: var(--admin-warning-text);
+}
+
+.sync-bar-policy {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--admin-text-secondary);
+}
+
+/* Label vs value split inside the policy line. The label ("API keys:") is a quiet caption, so it recedes to
+   the muted token; the value (the actual persistence state) carries the meaning, so a medium weight lifts it
+   off the caption without changing size or color. Both spans inherit the secondary color from .sync-bar-policy;
+   these rules only adjust the label/value emphasis. */
+
+.sync-bar-policy-label {
+    color: var(--admin-text-muted);
+}
+
+.sync-bar-policy-value {
+    font-weight: 500;
+}
+
+/* Discard + Apply travel as one unit. Grouping them (rather than leaving them as separate flex children of the
+   bar) keeps the button pair together when the bar wraps on a narrow card: without it, only the Apply button
+   would drop to a second row on its own, leaving a lopsided, unusually tall bar. flex-shrink: 0 stops the pair
+   from being squeezed, so it either fits beside the info text or wraps together as a block. */
+
+.sync-bar-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 0.5rem;
+}
+
+.sync-bar-discard {
+    padding: 0.4rem 1rem;
+    font-size: 0.9rem;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+    cursor: pointer;
+}
+
+.sync-bar-discard:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.sync-bar-apply {
+    padding: 0.4rem 1rem;
+    font-size: 0.9rem;
+    color: var(--admin-text-on-dark);
+    background-color: var(--admin-brand-navy);
+    border: none;
+    border-radius: 0.3rem;
+    cursor: pointer;
+}
+
+.sync-bar-apply:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+/* Focus ring for the commit buttons. outline-offset pushes the ring off the button onto the light bar surface,
+   so it stays clearly visible even on the solid navy Apply button where an inset ring would be swallowed. Two
+   triggers share one ring: :focus-visible covers ordinary Tab navigation, and the .is-jump-focused class covers
+   the Ctrl+Enter jump. The explicit class is necessary because the Ctrl+Enter focus is applied several async hops
+   after the keypress (keydown -> interop round-trip -> focus), which loses the keyboard association
+   :focus-visible depends on, so the browser would otherwise suppress the ring on that path. The container carries
+   the same ring for the fallback where both buttons are disabled (a clean draft): there it is also a Tab stop, so
+   the ring gives both the Tab landing and the Ctrl+Enter jump a visible target. */
+
+.sync-bar:focus-visible,
+.sync-bar.is-jump-focused,
+.sync-bar-discard:focus-visible,
+.sync-bar-discard.is-jump-focused,
+.sync-bar-apply:focus-visible,
+.sync-bar-apply.is-jump-focused {
+    outline: 2px solid var(--admin-brand-accent);
+    outline-offset: 2px;
+}
+
+/* Hint inside the sync bar: flex-basis: 100% forces it onto its own row below the status/policy/apply
+   controls, keeping the visual association clear without stretching the bar. contain: inline-size is
+   the critical piece: it tells the browser that this element's intrinsic content width must not leak
+   out to the parent's max-content calculation. Without it, the long hint text would balloon the entire
+   .backends-page wrapper wider than the widest table. min-width: 0 is belt-and-braces for flex items. */
+
+.sync-bar-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    flex-basis: 100%;
+    min-width: 0;
+    contain: inline-size;
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--admin-warning-text);
+}
+
+.sync-bar-hint-icon {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    margin-top: 0.1rem;
+    color: var(--admin-warning-icon);
+}
+
+.sync-bar-hint code {
+    padding: 0.05rem 0.3rem;
+    font-size: 0.78rem;
+    background-color: var(--admin-surface-code);
+    border-radius: 0.2rem;
+}

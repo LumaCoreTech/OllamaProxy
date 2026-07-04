@@ -1,0 +1,394 @@
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@page "/models"
+@using System.Globalization
+@using OllamaProxy.Admin.Catalog
+@using OllamaProxy.Configuration
+@using OllamaProxy.Core
+@using OllamaProxy.Providers.Abstractions
+@inject IAdminCatalogService AdminCatalogService
+
+<PageTitle>OllamaProxy Admin — Models</PageTitle>
+
+@* One shared width for the whole page: the wrapper sizes to its widest child (the model table), and the header
+   and lead fill it, so all right edges line up and the table never stretches its columns apart to fill 100%.
+   Prose is width-capped (see CSS) so only the table can drive this width. *@
+<div class="models-page">
+	<div class="models-header">
+		<h1>Models</h1>
+	</div>
+
+	<p class="models-lead">
+		The live catalog the proxy is serving right now — exactly what a client sees through <code>/api/tags</code>
+		and <code>/api/show</code>, with name collisions, prefixes, and shadowing already resolved.
+	</p>
+
+	@if (mCatalog is null)
+	{
+		<p class="models-status">Loading…</p>
+	}
+	else if (!mCatalog.ProxyReady)
+	{
+		<p class="models-status models-status-notready">
+			The proxy is not serving right now. This is normal during startup or the brief moment of a configuration
+			apply; refresh in a moment. If it persists, check the proxy host on the
+			<a href="configuration/backends">Backends</a> page.
+		</p>
+	}
+	else if (mCatalog.Models.Count == 0)
+	{
+		<p class="models-status">
+			The proxy is serving no models. Pin or discover some on the
+			<a href="configuration/backends">Backends</a> page.
+		</p>
+	}
+	else
+	{
+		<p class="models-count">@mCatalog.Models.Count model(s) served.</p>
+
+		<div class="models-card">
+			<table class="models-table">
+				<caption class="models-table-caption visually-hidden">Live models served by the proxy</caption>
+				<thead>
+				<tr>
+					<th scope="col"></th>
+					<th scope="col">Model</th>
+					<th scope="col">Backend</th>
+					<th scope="col">Upstream</th>
+					<th scope="col">Capabilities</th>
+					<th scope="col">Context</th>
+					<th scope="col">Reasoning</th>
+				</tr>
+				</thead>
+				<tbody>
+				@for (int rowIndex = 0; rowIndex < mCatalog.Models.Count; rowIndex++)
+				{
+					RegisteredModel model = mCatalog.Models[rowIndex];
+					bool expanded = mExpanded.Contains(model.Name);
+					string detailPanelId = GetDetailPanelId(rowIndex);
+
+					<tr class="models-row @(expanded ? "models-row-details-open" : null)">
+						<td class="models-expand-cell">
+							<button type="button"
+							        class="models-expand"
+							        @onclick="() => ToggleDetails(model.Name)"
+							        aria-expanded="@(expanded.ToString().ToLowerInvariant())"
+							        aria-controls="@detailPanelId"
+							        aria-label="@(expanded ? "Hide details" : "Show details")">
+								@(expanded ? "▾" : "▸")
+							</button>
+						</td>
+						<th scope="row" class="models-name">@model.Name</th>
+						<td>@model.BackendName</td>
+						<td>@model.UpstreamModel</td>
+						<td>
+							<CapabilityChips Capabilities="model.Capabilities"/>
+						</td>
+						<td>@ContextSummary(model.ContextLength)</td>
+						<td>@ReasoningSummary(model.ReasoningEffort)</td>
+					</tr>
+
+					@if (expanded)
+					{
+						string? quantization = QuantizationLevel(model);
+
+						<tr class="models-detail-row">
+							<td></td>
+							<td colspan="6" class="models-detail-cell">
+								@* The full Ollama /api/show picture. Fields the proxy genuinely knows are shown verbatim; the
+					 GGUF/Modelfile-shaped fields that OpenAI-compatible backends never report are shown as "n/a"
+					 rather than fabricated, consistent with the proxy's "never guess" stance. *@
+								<div id="@detailPanelId" class="models-detail-panel">
+									<p class="models-detail-heading">Model details</p>
+									<dl class="models-fields">
+										<div class="models-field models-field-real">
+											<dt>Capabilities</dt>
+											<dd>
+												<CapabilityChips Capabilities="model.Capabilities"/>
+											</dd>
+										</div>
+										<div class="models-field models-field-real">
+											<dt>Context length</dt>
+											<dd>@ContextSummary(model.ContextLength) tokens</dd>
+										</div>
+										<div class="models-field models-field-real">
+											<dt>Capability source</dt>
+											<dd>@model.Capabilities.Source</dd>
+										</div>
+										@if (model.Capabilities.Inconclusive != InconclusiveCapabilities.None)
+										{
+											@* An optional probe (tools/vision/embeddings) could not confirm the capability, so its
+				   flag is the conservative default rather than a measured answer. Surfaced explicitly so the
+				   operator does not read an unconfirmed capability as a definitive "unsupported": the model
+				   may still support it, and pinning it in a backend's registry is how to assert it. *@
+											<div class="models-field models-field-real">
+												<dt>Inconclusive probes</dt>
+												<dd class="models-inconclusive">@InconclusiveSummary(model.Capabilities.Inconclusive)</dd>
+											</div>
+										}
+										<div class="models-field models-field-real">
+											<dt>Backend</dt>
+											<dd>@model.BackendName</dd>
+										</div>
+										<div class="models-field models-field-real">
+											<dt>Upstream model</dt>
+											<dd>@model.UpstreamModel</dd>
+										</div>
+										@if (model.CreatedAtUtc is { } created)
+										{
+											<div class="models-field models-field-real">
+												<dt>Listed in backend</dt>
+												<dd>@created.ToString("d MMM yyyy", CultureInfo.InvariantCulture)</dd>
+											</div>
+										}
+										<div class="models-field models-field-real">
+											<dt>Reasoning effort</dt>
+											<dd>@ReasoningSummary(model.ReasoningEffort)</dd>
+										</div>
+
+										@* Descriptive metadata the backend genuinely published (OpenRouter name/pricing, Venice
+                 model_spec). Each field is shown only when reported, so a metadata-poor backend adds no rows. *@
+										@if (model.Metadata is { } metadata)
+										{
+											@if (metadata.DisplayName is { Length: > 0 } displayName)
+											{
+												<div class="models-field models-field-real">
+													<dt>Display name</dt>
+													<dd>@displayName</dd>
+												</div>
+											}
+											@if (metadata.Tokenizer is { Length: > 0 } tokenizer)
+											{
+												<div class="models-field models-field-real">
+													<dt>Tokenizer</dt>
+													<dd>@tokenizer</dd>
+												</div>
+											}
+											@if (metadata.MaxCompletionTokens is { } maxCompletion)
+											{
+												<div class="models-field models-field-real">
+													<dt>Max output tokens</dt>
+													<dd>@maxCompletion.ToString("N0", CultureInfo.InvariantCulture)</dd>
+												</div>
+											}
+											@if (PriceSummary(metadata) is { Length: > 0 } price)
+											{
+												<div class="models-field models-field-real">
+													<dt>Pricing (per 1M tokens)</dt>
+													<dd>@price</dd>
+												</div>
+											}
+											@if (metadata.SourceUrl is { Length: > 0 } source)
+											{
+												<div class="models-field models-field-real">
+													<dt>Source</dt>
+													<dd>
+														<a href="@source" target="_blank" rel="noopener noreferrer">@source</a>
+													</dd>
+												</div>
+											}
+											@if (metadata.Description is { Length: > 0 } description)
+											{
+												<div class="models-field models-field-real models-field-wide">
+													<dt>Description</dt>
+													<dd>@description</dd>
+												</div>
+											}
+										}
+
+										@* Quantization is the one GGUF-shaped field a backend can genuinely fill (Venice reports it);
+                 show the real value when present, otherwise fall back to the honest "n/a". *@
+										<div class="models-field @(quantization is null ? "models-field-na" : "models-field-real")">
+											<dt>Quantization level</dt>
+											@if (quantization is { } q)
+											{
+												<dd>@q</dd>
+											}
+											else
+											{
+												<dd class="models-na">n/a</dd>
+											}
+										</div>
+
+										<div class="models-field models-field-synth">
+											<dt>Architecture</dt>
+											<dd>openai <span class="models-note">(synthesized)</span></dd>
+										</div>
+										<div class="models-field models-field-synth">
+											<dt>Format</dt>
+											<dd>gguf <span class="models-note">(synthesized)</span></dd>
+										</div>
+
+										@foreach (string field in UnavailableOllamaFields)
+										{
+											<div class="models-field models-field-na">
+												<dt>@field</dt>
+												<dd class="models-na">n/a</dd>
+											</div>
+										}
+									</dl>
+									<p class="models-na-note">
+										<span class="models-na">n/a</span> — not reported by this backend. These are GGUF/Modelfile
+										fields from Ollama's local-model world that upstream OpenAI-style APIs do not expose, so the
+										proxy does not guess them.
+									</p>
+								</div>
+							</td>
+						</tr>
+					}
+				}
+				</tbody>
+			</table>
+		</div>
+	}
+</div>
+
+@code {
+
+	/// <summary>
+	/// The Ollama <c>/api/show</c> fields the proxy cannot determine from an OpenAI-compatible backend, shown as
+	/// "n/a" rather than fabricated. They are GGUF/Modelfile artifacts of Ollama's local-model world (model file
+	/// metadata) or backend-internal generation defaults that no OpenAI-style listing exposes.
+	/// </summary>
+	private static readonly string[] UnavailableOllamaFields =
+	[
+		"Family",
+		"Parameter size",
+		"Size",
+		"Digest",
+		"Modified at",
+		"Template",
+		"Default parameters",
+		"System prompt",
+		"License"
+	];
+
+	/// <summary>
+	/// The live catalog read from the running proxy, or <see langword="null"/> until the first load completes.
+	/// </summary>
+	private LiveCatalog? mCatalog;
+
+	/// <summary>
+	/// The model names whose detail row is currently expanded. Keyed by the catalog's unique client-facing name;
+	/// several rows may be open at once.
+	/// </summary>
+	private readonly HashSet<string> mExpanded = new(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Stable per-page suffix used for generated DOM ids. It prevents collisions without depending on model names.
+	/// </summary>
+	private readonly string mComponentId = Guid.NewGuid().ToString("N");
+
+	/// <inheritdoc/>
+	protected override void OnInitialized() => Load();
+
+	/// <summary>
+	/// Reads the live catalog from the proxy. A re-read drops any expanded detail rows whose model no longer
+	/// exists so the expansion set never references a vanished model.
+	/// </summary>
+	private void Load()
+	{
+		mCatalog = AdminCatalogService.GetLiveCatalog();
+		mExpanded.RemoveWhere(name => !mCatalog.Models.Any(model =>
+			                              string.Equals(model.Name, name, StringComparison.OrdinalIgnoreCase)));
+	}
+
+	/// <summary>
+	/// Toggles a model's detail row open or closed.
+	/// </summary>
+	/// <param name="modelName">The client-facing name of the model whose details to toggle.</param>
+	private void ToggleDetails(string modelName)
+	{
+		if (!mExpanded.Add(modelName))
+		{
+			mExpanded.Remove(modelName);
+		}
+	}
+
+	/// <summary>
+	/// Gets a stable identifier for a model's detail panel so the expand button can reference it with
+	/// <c>aria-controls</c>. The row index is unique within this rendered catalog and the component id prevents
+	/// collisions with other model tables.
+	/// </summary>
+	/// <param name="rowIndex">The model row index in the current catalog.</param>
+	/// <returns>A detail panel id unique to the model.</returns>
+	private string GetDetailPanelId(int rowIndex) => $"model-detail-{mComponentId}-{rowIndex.ToString(CultureInfo.InvariantCulture)}";
+
+	/// <summary>
+	/// Gets a compact, comma-separated list of the capabilities whose probe stayed inconclusive, for the detail
+	/// panel's "Inconclusive probes" line. Completion is included (its fail-open probe leaves it supported but
+	/// unconfirmed); the optional capabilities are listed when their flag is the conservative default. Only ever
+	/// called when at least one flag is set.
+	/// </summary>
+	/// <param name="inconclusive">The inconclusive-probe flags to summarize.</param>
+	/// <returns>The comma-separated capability names whose probe could not confirm support.</returns>
+	private static string InconclusiveSummary(InconclusiveCapabilities inconclusive)
+	{
+		List<string> flags = [];
+		if (inconclusive.HasFlag(InconclusiveCapabilities.Completion)) flags.Add("completion");
+		if (inconclusive.HasFlag(InconclusiveCapabilities.Tools)) flags.Add("tools");
+		if (inconclusive.HasFlag(InconclusiveCapabilities.Vision)) flags.Add("vision");
+		if (inconclusive.HasFlag(InconclusiveCapabilities.Embeddings)) flags.Add("embeddings");
+
+		return string.Join(", ", flags);
+	}
+
+	/// <summary>
+	/// Gets a human-readable context-window value, formatting the token count with thousands separators.
+	/// </summary>
+	/// <param name="contextLength">The context window in tokens.</param>
+	/// <returns>The formatted token count.</returns>
+	private static string ContextSummary(long contextLength) => contextLength.ToString("N0", CultureInfo.InvariantCulture);
+
+	/// <summary>
+	/// Gets a human-readable label for a model's pinned reasoning effort, or a placeholder when none is pinned.
+	/// </summary>
+	/// <param name="effort">The pinned reasoning effort, or <see langword="null"/> when none is pinned.</param>
+	/// <returns>The effort label, or a placeholder.</returns>
+	private static string ReasoningSummary(ReasoningEffort? effort) => effort?.ToString() ?? "—";
+
+	/// <summary>
+	/// Gets the weight quantization a model is served at when the backend reported it (e.g. Venice's
+	/// <c>fp16</c>/<c>fp8</c>), or <see langword="null"/> when no backend metadata carried one. This is the one
+	/// Ollama-shaped field a backend can genuinely fill, so it is read from the live metadata rather than the
+	/// fixed "n/a" list.
+	/// </summary>
+	/// <param name="model">The model whose quantization to read.</param>
+	/// <returns>The reported quantization, or <see langword="null"/> when none was reported.</returns>
+	private static string? QuantizationLevel(RegisteredModel model) => model.Metadata?.Quantization is { Length: > 0 } quantization ? quantization : null;
+
+	/// <summary>
+	/// Formats a model's normalized per-million-token pricing for display, emitting an input/output pair when
+	/// both are known, a single labeled figure when only one is, or an empty string when the backend reported no
+	/// price. All figures are USD per one million tokens (the neutral metadata normalizes provider units).
+	/// </summary>
+	/// <param name="metadata">The provider metadata carrying the normalized prices.</param>
+	/// <returns>The formatted price summary, or an empty string when no price was reported.</returns>
+	private static string PriceSummary(ProviderModelMetadata metadata)
+	{
+		string? input = FormatUsd(metadata.PromptUsdPerMillionTokens);
+		string? output = FormatUsd(metadata.CompletionUsdPerMillionTokens);
+
+		return (input, output) switch
+		{
+			({ } i, { } o) => $"in {i} · out {o}",
+			({ } i, null)  => $"in {i}",
+			(null, { } o)  => $"out {o}",
+			var _          => string.Empty
+		};
+	}
+
+	/// <summary>
+	/// Formats a USD amount with two-or-more significant decimals, or <see langword="null"/> when the amount is
+	/// absent. Token prices are small fractions, so a fixed two-decimal format would collapse them to "$0.00";
+	/// this keeps enough precision to stay meaningful.
+	/// </summary>
+	/// <param name="amount">The USD amount, or <see langword="null"/>.</param>
+	/// <returns>The formatted amount, or <see langword="null"/> when the amount is absent.</returns>
+	private static string? FormatUsd(decimal? amount) => amount is { } value
+		                                                     ? "$" + value.ToString(value < 1m ? "0.####" : "0.00", CultureInfo.InvariantCulture)
+		                                                     : null;
+
+}

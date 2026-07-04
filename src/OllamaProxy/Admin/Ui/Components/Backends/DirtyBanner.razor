@@ -1,0 +1,34 @@
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@* Visible "you have unsaved changes" reminder rendered between the page header and the backend cards when the
+   draft has been edited since the last load or successful apply. Stays in sync with the JS-side beforeunload
+   guard (see wwwroot/adminDirtyGuard.js) and the in-app location-changing handler in the Backends page; both
+   consult the same flag, so a dirty state is reflected in the banner, the browser confirm-on-leave dialog,
+   and the in-app route change prompt. ARIA role="status" + aria-live="polite" so screen readers announce the
+   transition without grabbing focus. *@
+@if (Visible)
+{
+	<div class="backends-dirty-banner" role="status" aria-live="polite">
+		<span class="backends-dirty-dot" aria-hidden="true"></span>
+		<span class="backends-dirty-text">You have unsaved changes.</span>
+		<span class="backends-dirty-hint">Apply to keep them, or Discard to revert.</span>
+		<span class="backends-dirty-shortcut">
+			Press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to jump to the apply and discard controls.
+		</span>
+	</div>
+}
+
+@code {
+
+	/// <summary>
+	/// Whether the draft has unsaved edits. When <see langword="true"/> the banner is rendered; when
+	/// <see langword="false"/> nothing is emitted. The owning page is responsible for computing the flag; the
+	/// banner is a pure presentation component that takes the boolean at face value.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public bool Visible { get; set; }
+
+}

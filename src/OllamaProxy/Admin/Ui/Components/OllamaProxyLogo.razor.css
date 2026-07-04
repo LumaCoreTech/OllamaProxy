@@ -1,0 +1,35 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* The logo scales to the width of its container while keeping the aspect ratio. */
+svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* Eyelid overlay for the white side of the logo. Hidden by default so the eye
+   stays open; the blinking animation is enabled via the .logo-lid--active class. */
+
+.logo-lid {
+    display: none;
+}
+
+.logo-lid--active {
+    display: block;
+    transform-box: fill-box;
+    transform-origin: top;
+    transform: scaleY(0);
+    animation: blink 5s ease-in-out infinite;
+}
+
+@keyframes blink {
+    0%, 45%, 55%, 100% {
+        transform: scaleY(0);
+    }
+
+    50% {
+        transform: scaleY(1);
+    }
+}

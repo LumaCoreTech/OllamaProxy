@@ -1,0 +1,80 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Unsaved-changes banner: a single-line reminder rendered between the page header and the backend cards whenever
+   the draft has been edited since the last load or successful apply. The amber palette mirrors the existing
+   sync-bar-dirty color (the structural-error line in the sync bar) so the same "stop and look" cue is reused
+   rather than invented anew. Sits in the page width (not full-width) to keep alignment with the cards below. */
+
+.backends-dirty-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 1rem;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.9rem;
+    color: var(--admin-warning-text);
+    background-color: var(--admin-warning-bg);
+    border: 1px solid var(--admin-warning-border-light);
+    border-radius: 0.375rem;
+}
+
+.backends-dirty-dot {
+    display: inline-block;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background-color: var(--admin-warning-dot);
+    /* Subtle pulse so the reminder reads as live without being noisy; respects reduced-motion preferences. */
+    animation: backends-dirty-pulse 1.6s ease-in-out infinite;
+}
+
+.backends-dirty-text {
+    font-weight: 600;
+}
+
+.backends-dirty-hint {
+    color: var(--admin-warning-dot);
+    font-weight: 400;
+}
+
+/* Discoverability hint for the Ctrl+Enter jump to the commit bar. Pushed to its own row via flex-basis so it
+   reads as a secondary aside under the primary "unsaved changes / apply or discard" line rather than competing
+   with it. Muted to match the softer .backends-dirty-hint weight. */
+
+.backends-dirty-shortcut {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+    color: var(--admin-warning-dot);
+}
+
+/* Keycap styling: the light card surface on the amber banner makes each key read as a physical cap without
+   inventing a new palette. The subtle border and shadow give it depth; monospace keeps the glyphs aligned. */
+
+.backends-dirty-shortcut kbd {
+    padding: 0.05rem 0.35rem;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.75rem;
+    color: var(--admin-warning-text);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-warning-border-light);
+    border-radius: 0.25rem;
+    box-shadow: 0 1px 0 var(--admin-warning-border-light);
+}
+
+@keyframes backends-dirty-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.45;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .backends-dirty-dot {
+        animation: none;
+    }
+}

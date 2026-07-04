@@ -1,0 +1,69 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+.backends-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Add backend: a quiet secondary action in the page header. */
+
+.backends-add {
+    padding: 0.4rem 1rem;
+    font-size: 0.9rem;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+    cursor: pointer;
+}
+
+.backends-add:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.backends-status {
+    /* Wrap at a readable width so a status line never drives the shared page width; only tables should. */
+    max-width: var(--admin-reading-width);
+    color: var(--admin-text-secondary);
+}
+
+/* Page wrapper: hugs its widest child and centers as one block, mirroring the Models page.
+
+   width: max-content sizes the wrapper to its widest child: the widest expanded model table, or just the card
+   header rows when every card is collapsed. Every card, the header and the sync bar fill this width, so their
+   right edges line up no matter which card is expanded. min-width holds the wrapper at the reading column (52rem,
+   the same cap the expanded form uses), so a fully collapsed page keeps a comfortable column width instead of
+   shrinking to its title text. fit-content can't replace max-content here: it would cap at the column width and
+   never grow.
+
+   margin-inline: auto centers the block while it fits the content column. When a wide table outgrows the column,
+   the auto margins resolve to zero (CSS collapses auto margins on an overflowing box), so the wrapper pins to the
+   column's left edge and the table overflows right, where .admin-shell-main gives a reachable scrollbar. Only
+   tables drive the extra width: the form (.backend-settings) and page prose are width-capped below so prose can't
+   balloon the page.
+
+   padding-inline adds a symmetric inline gutter that serves both cases at once. While the page fits the viewport,
+   the gutter is part of the max-content box that margin-inline: auto centers, so the cards keep equal air on both
+   sides instead of sitting off-center. When a wide table overflows, the auto margins collapse and the gutter
+   becomes a reachable gap at each scroll end. It must live here, not on the scroll container: Chromium and WebKit
+   drop a scroll container's inline-end padding once its content overflows, so .admin-shell-main's own padding
+   can't provide the trailing gap. As padding on this intrinsic-width wrapper, it always survives. */
+
+.backends-page {
+    width: max-content;
+    min-width: var(--admin-reading-width);
+    margin-inline: auto;
+    padding-inline: 1.5rem;
+}
+
+/* BackendModels CSS was extracted to Components/Backends/BackendModels.razor.css. */
+
+/* Sync bar CSS was extracted to Components/Backends/ApplyBar.razor.css. */
+
+/* Apply result banner CSS was extracted to Components/Backends/ApplyResultBanner.razor.css. */

@@ -1,0 +1,52 @@
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@page "/"
+
+<PageTitle>OllamaProxy Admin</PageTitle>
+
+@* Page wrapper: caps and centers the welcome content at the layout width. The shell container is width-neutral,
+   so without this wrapper the hero band would stretch across the full canvas. *@
+<div class="home-page">
+	@* Welcome hero: a dark navy band echoing the shell header (#16213e) so the logo's own dark backdrop sits on a
+	   matching surface instead of clashing with the otherwise-light admin theme. The logo is framed as a glowing
+	   rounded tile, which reads as an intentional element and hides the square image edge. *@
+	<section class="home-hero">
+		<div class="home-hero-logo">
+			<OllamaProxyLogo ShouldBlink="true"
+			                 aria-label="OllamaProxy logo: a llama face, one half a glowing circuit board, the other a clean white silhouette"/>
+		</div>
+		<p class="home-hero-tagline">Speak Ollama, run OpenAI.</p>
+	</section>
+
+	<h1 class="home-about-title">About this project</h1>
+
+	<p class="home-lead">
+		OllamaProxy is a lightweight reverse proxy that exposes the <strong>Ollama API</strong> while forwarding and
+		translating every request to one or more <strong>OpenAI-compatible backends</strong> — so any Ollama-aware
+		client can reach cloud or local models, with per-model routing.
+	</p>
+
+	@* Project links: external resources rather than runtime state, so they open in a new tab and carry rel="noopener"
+	   to keep the admin tab isolated from the opened page. Branch-agnostic GitHub URLs (#readme, blob/HEAD) survive a
+	   default-branch rename. *@
+	<ul class="home-links">
+		<li>
+			<a href="https://github.com/LumaCoreTech/OllamaProxy" target="_blank" rel="noopener noreferrer">Project home</a>
+			<span class="home-link-note">Source, releases and discussion on GitHub</span>
+		</li>
+		<li>
+			<a href="https://github.com/LumaCoreTech/OllamaProxy/issues" target="_blank" rel="noopener noreferrer">Issue tracker</a>
+			<span class="home-link-note">Report a bug or request a feature</span>
+		</li>
+		<li>
+			<a href="https://github.com/LumaCoreTech/OllamaProxy#readme" target="_blank" rel="noopener noreferrer">Documentation</a>
+			<span class="home-link-note">Configuration, endpoints and example setups</span>
+		</li>
+		<li>
+			<a href="https://github.com/LumaCoreTech/OllamaProxy/blob/HEAD/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
+			<span class="home-link-note">MIT — free and open source for everyone</span>
+		</li>
+	</ul>
+</div>

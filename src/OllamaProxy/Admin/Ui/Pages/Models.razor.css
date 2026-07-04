@@ -1,0 +1,248 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Page wrapper: hugs its widest child and centers as one block within the reading column. width: max-content
+   sizes the wrapper to its content (the card, or the width-capped lead, whichever is wider), so the header,
+   lead and card share one left edge instead of spreading across a forced full width. margin-inline: auto then
+   centers that block in the column. When a wide table outgrows the column, max-content makes the wrapper wider
+   than the column. The auto margins then collapse to zero (CSS resolves auto margins to 0 when a box overflows
+   its container), so the wrapper pins to the column's left edge and the table overflows to the right, where
+   .admin-shell-main provides a reachable horizontal scrollbar. Only the table drives the extra width; all page
+   prose is width-capped below so a long sentence can't balloon the wrapper. */
+
+.models-page {
+    width: max-content;
+    margin-inline: auto;
+    /* Symmetric inline gutter that serves both layout cases. While the card fits the viewport, the gutter is part
+       of the max-content box that margin-inline: auto centers, so the card keeps equal air on both sides instead
+       of sitting off-center. When a wide table overflows, the auto margins collapse to zero and the gutter becomes
+       a reachable gap at each scroll end. The gutter must live here, not on the scroll container: Chromium and
+       WebKit drop a scroll container's inline-end padding once its content overflows, so .admin-shell-main's own
+       padding can't provide the trailing gap. As padding on this intrinsic-width wrapper, it always survives. */
+    padding-inline: 1.5rem;
+}
+
+.models-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Wrap prose at a readable width so a status/lead line never drives the shared page width; only the table
+   should. Without the cap, a long sentence would balloon the max-content page wrapper wider than the table. */
+
+.models-lead {
+    max-width: var(--admin-reading-width);
+    margin-top: 0;
+    color: var(--admin-text-secondary);
+}
+
+.models-status {
+    max-width: var(--admin-reading-width);
+    color: var(--admin-text-secondary);
+}
+
+/* Not-ready is a transient, non-error state (startup / mid-recycle), so it reads as informational amber
+   rather than a red failure. */
+
+.models-status-notready {
+    /* Wrap the multi-line notice at a readable width so it can't drive the shared page width. */
+    max-width: var(--admin-reading-width);
+    padding: 0.75rem 1rem;
+    color: var(--admin-warning-text);
+    background-color: var(--admin-warning-bg);
+    border-radius: 0.3rem;
+}
+
+.models-count {
+    color: var(--admin-text-muted);
+    font-size: 0.85rem;
+}
+
+/* Card wrapper: mirrors the backend-card treatment so the table sits on a white surface consistent with the
+   rest of the admin UI, rather than floating directly on the page background. width: max-content sizes the card
+   to the table it wraps, so the card hugs the table with no empty strip on the right. We deliberately do not
+   stretch the card to the full page width: the Models page has no right-aligned control to line the card edge
+   up with, so a forced full width would only leave a white gap beside the narrower table. */
+
+.models-card {
+    width: max-content;
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-card);
+    border-radius: 0.5rem;
+    padding: 0 1.25rem;
+}
+
+/* Table layout: auto (the default), so each column sizes to its widest cell across all rows. Sized to its
+   content (width: max-content) rather than width: 100%: the old full-width forced the auto algorithm to
+   spread the columns apart with large gaps to fill the card. With max-content the table is exactly as wide
+   as it needs to be, columns sit snug beside each other, and the card + page wrapper grow to fit it. */
+
+.models-table {
+    width: max-content;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.models-table th,
+.models-table td {
+    padding: 0.45rem 0.6rem;
+    text-align: left;
+    border-bottom: 1px solid var(--admin-border-table);
+    vertical-align: top;
+}
+
+.models-table th {
+    font-weight: 600;
+    color: var(--admin-text-secondary);
+}
+
+.models-name {
+    font-weight: 600;
+}
+
+.models-expand-cell {
+    width: 1.5rem;
+}
+
+/* Expand caret: reset button chrome so it reads as an inline toggle glyph, not a form button. */
+
+.models-expand {
+    padding: 0;
+    font: inherit;
+    color: var(--admin-brand-navy);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+
+/* Detail row: inherits the card's white surface. The panel inside provides its own subtle grey background
+   so it reads as a distinct, contained block rather than a tinted strip welded to the row above. */
+
+/* Keep the wide detail panel from skewing the auto table-layout: a colspan cell otherwise lets its content's
+   max-content (notably a long description) widen the spanned columns, so the model column jumps on expand.
+   max-width:0 removes the cell from intrinsic column sizing while it still fills the columns the other rows
+   defined. */
+
+.models-detail-cell {
+    max-width: 0;
+}
+
+/* No separator between a model and its own expanded details: drop the bottom border of the model row when its
+   detail panel is open, so the line only ever divides one model from the next. */
+
+.models-table tr.models-row-details-open > td {
+    border-bottom: none;
+}
+
+/* Detail panel: a self-contained card, inset from the table edges and tied to its model by a left accent bar, so
+   the expanded block is unmistakably "details for this model" rather than a stray row. */
+
+.models-detail-panel {
+    /* Flush left and right so the panel's left edge lines up with the model-name column and its right edge with
+       the table edge; vertical margin only sets it off from the rows above and below. */
+    margin: 0.35rem 0 0.85rem;
+    padding: 0.55rem 0.9rem 0.65rem;
+    background-color: var(--admin-surface-panel);
+    border: 1px solid var(--admin-border-card);
+    border-left: 3px solid var(--admin-brand-navy);
+    border-radius: 0.4rem;
+}
+
+/* Panel heading: a small, quiet caption that labels the block as details. */
+
+.models-detail-heading {
+    margin: 0 0 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--admin-text-muted);
+}
+
+/* A single vertical column of "label : value" rows. Stacking (rather than a multi-column grid with
+   right-aligned values) keeps every value left-aligned right beside its label, so long values like a source URL
+   or description simply wrap within the value column instead of fighting the grid. */
+
+.models-fields {
+    display: flex;
+    flex-direction: column;
+    margin: 0.25rem 0 0.5rem;
+}
+
+.models-field {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+    border-bottom: 1px dotted var(--admin-border-dotted);
+}
+
+.models-field dt {
+    flex: 0 0 12rem;
+    color: var(--admin-text-muted);
+}
+
+.models-field dd {
+    flex: 1 1 auto;
+    /* Allow long values (URLs, prose) to wrap instead of forcing the row wider than the panel. */
+    min-width: 0;
+    margin: 0;
+    text-align: left;
+}
+
+/* Description can run to several lines: stack its value under the label so the prose gets the full width. */
+
+.models-field-wide {
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+/* In a column-direction flex the label's flex-basis applies to its HEIGHT, so the row rule's 12rem basis would
+   make a 12rem-tall label box. Reset it to auto here so the label and its prose size to content. */
+
+.models-field-wide dt {
+    flex: 0 0 auto;
+}
+
+.models-field-wide dd {
+    color: var(--admin-text-secondary);
+}
+
+/* Keep long source URLs from overflowing the value column. */
+
+.models-field dd a {
+    word-break: break-all;
+}
+
+/* A real, proxy-known value gets a quiet left accent to set it apart from the synthesized/unavailable ones. */
+
+.models-field-real dt {
+    color: var(--admin-text-secondary);
+    font-weight: 600;
+}
+
+.models-note {
+    color: var(--admin-text-faint);
+    font-size: 0.8rem;
+}
+
+.models-na {
+    color: var(--admin-text-faint);
+    font-style: italic;
+}
+
+.models-na-note {
+    margin: 0;
+    color: var(--admin-text-muted);
+    font-size: 0.8rem;
+}
+
+/* Inconclusive-probes detail value: amber text ties it to the inconclusive chips above. */
+
+.models-inconclusive {
+    color: var(--admin-warning-text);
+}

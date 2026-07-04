@@ -1,0 +1,193 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Advanced disclosure: the rarely-changed knobs, collapsed by default so the common fields stay uncluttered. */
+
+.backend-advanced {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* Advanced toggle: a quiet disclosure header, the chrome reset like the card header but smaller and lighter so
+   it reads as a sub-section divider rather than a competing action. */
+
+.backend-advanced-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.backend-advanced-header:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+/* Expand caret: a fixed-width glyph so the title starts at the same offset whether open or closed. Duplicated
+   from BackendCard.razor.css (same rationale as the .backend-field block below): Blazor CSS isolation scopes
+   each rule to the razor file that renders the markup, and the caret <span> here is rendered by
+   BackendAdvanced.razor, so BackendCard's identical rule cannot reach it across the component boundary. */
+
+.backend-expand-indicator {
+    width: 1rem;
+    color: var(--admin-text-muted);
+}
+
+.backend-advanced-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--admin-text-secondary);
+}
+
+/* Advanced body: a vertical stack of fields, indented under the toggle so it visually belongs to it. */
+
+.backend-advanced-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-left: 1.5rem;
+}
+
+/* Advanced field: stacks its hint below the label, so each field group reads top-to-bottom (label, control,
+   hint). Scoped to the advanced body so the connection fields above are left untouched. */
+
+.backend-advanced-body .backend-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+/* Field chrome inside an advanced field. Duplicated from BackendSettings.razor.css because Blazor's CSS
+   isolation scopes each rule to the razor file that renders the markup. The .backend-field-hint <p>
+   and the input/select children are rendered by BackendAdvanced.razor, so the matching rules have to
+   live here too; otherwise the browser falls back to its user-agent defaults and the layout balloons. */
+
+.backend-advanced-body .backend-field label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--admin-text-secondary);
+}
+
+.backend-advanced-body .backend-field input,
+.backend-advanced-body .backend-field select {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+    /* Inputs and selects inside the Advanced body default to their natural width (placeholder text, value
+       length). Without a cap, a model-prefix placeholder like "e.g. vllm" or a four-digit timeout expands
+       the input to fill the entire field column, which dominates the layout against the hint prose below.
+       Capping at a comfortable editing width keeps the rhythm uniform: the hint stays the visual anchor,
+       not the input box. */
+    max-width: 24rem;
+}
+
+.backend-advanced-body .backend-field input:disabled,
+.backend-advanced-body .backend-field select:disabled {
+    background-color: var(--admin-surface-code);
+    opacity: 0.7;
+}
+
+.backend-advanced-body .backend-field-hint {
+    margin: 0;
+    max-width: 56rem;
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--admin-text-muted);
+}
+
+.backend-advanced-body .backend-field-hint code {
+    padding: 0.05rem 0.25rem;
+    font-size: 0.92em;
+    background-color: var(--admin-surface-code);
+    border-radius: 0.2rem;
+}
+
+/* Probing group: a bordered sub-section grouping the four probe toggles with their tuning knobs. */
+
+.backend-probing {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--admin-border-card);
+    border-radius: 0.4rem;
+}
+
+.backend-probing legend {
+    padding: 0 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--admin-text-secondary);
+}
+
+/* Probe toggles: a horizontal, wrapping row of checkbox labels, each laid out inline (box beside its text).
+   The label primitive itself (.backend-check) is shared: it lives in admin-theme.css because BackendModels
+   renders it too, and component-scoped CSS could not reach across to that other component. */
+
+.backend-probing-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+}
+
+/* Tuning knobs: a responsive grid of small numeric inputs, each label stacking its caption above the box. */
+
+.backend-probing-knobs {
+    display: grid;
+    /* minmax(11rem, 1fr): the 11rem lower bound is the minimum column width where all five knob columns can
+       sit comfortably side-by-side at the editor cap (64rem - 1.5rem padding - 4 × 0.75rem gap ≈ 60rem, divided
+       across 5 columns ≈ 12rem each; 11rem keeps a little slack for the caption above each input). At narrower
+       viewports or in a card that hasn't grown to the editor cap, auto-fit reflows the grid to fewer columns
+       (typically 3+2 or 2+2+1), so the layout never produces a single trailing orphan column. The upper bound
+       is 1fr so the grid fills any wider container up to the editor cap; an unbounded 1fr would let a single
+       knob column eat the entire probing-block width. */
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.6rem 0.75rem;
+}
+
+.backend-probing-knobs label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--admin-text-secondary);
+}
+
+.backend-probing-knobs input {
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+    /* Cap the input at a comfortable editing width so a single two-digit value doesn't visually stretch the
+       box to fill the entire column. The grid column above is the wider parent (up to ~12rem at the editor
+       cap); this leaves a sliver of right-side breathing room next to the value so the input reads as "small
+       numeric field", not as "blank space waiting for content". */
+    max-width: 10rem;
+}
+
+.backend-probing-knobs input:disabled {
+    background-color: var(--admin-surface-code);
+    opacity: 0.7;
+}

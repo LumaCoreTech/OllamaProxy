@@ -1,0 +1,112 @@
+@using OllamaProxy.Providers.Abstractions
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@* Authored as markup (not via RenderTreeBuilder) so Blazor CSS isolation stamps the scope attribute onto each
+   element and the scoped chip styles actually apply. The previous builder-based rendering received no scope
+   attribute, so the flex gap and pill backgrounds were silently dropped and the chips ran together. *@
+@if (mChips.Count == 0)
+{
+	@* No capability is supported or unconfirmed (e.g. an embedding-only model whose only flag was conclusively
+	   negative): a muted placeholder instead of an empty cell. *@
+	<span class="caps-none">none</span>
+}
+else
+{
+	<div class="caps-chips">
+		@foreach (Chip chip in mChips)
+		{
+			<span class="@chip.CssClass" title="@chip.Title">@chip.Text</span>
+		}
+	</div>
+}
+
+@code {
+
+	/// <summary>
+	/// The resolved capabilities to render as chips. A confirmed capability is a solid chip; completion whose
+	/// probe stayed inconclusive is a supported-but-unconfirmed chip (kept exposed/fail-open, carrying a "?"); an
+	/// optional capability (tools, vision, embeddings) whose probe stayed inconclusive is an off-but-unconfirmed
+	/// "?" chip. A capability that was conclusively probed as unsupported produces no chip, so the cell shows what
+	/// is known rather than a list of negatives. The unconfirmed chips are what stop a failed probe from reading
+	/// as a measured fact.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public required ModelCapabilities Capabilities { get; init; }
+
+	/// <summary>
+	/// The chips computed from <see cref="Capabilities"/> for the current render, rebuilt on each parameter set.
+	/// </summary>
+	private IReadOnlyList<Chip> mChips = [];
+
+	/// <inheritdoc/>
+	protected override void OnParametersSet() => mChips = BuildChips(Capabilities);
+
+	/// <summary>
+	/// Builds the chip descriptors for a capability set, omitting any capability that was conclusively probed as
+	/// unsupported so the rendered list never reads as a series of negatives.
+	/// </summary>
+	/// <param name="capabilities">The capabilities to translate into chips.</param>
+	/// <returns>The chips to render, in fixed capability order; empty when nothing is supported or unconfirmed.</returns>
+	private static IReadOnlyList<Chip> BuildChips(ModelCapabilities capabilities)
+	{
+		(string Label, bool Supported, bool Inconclusive)[] candidates =
+		[
+			("completion", capabilities.SupportsCompletion, capabilities.Inconclusive.HasFlag(InconclusiveCapabilities.Completion)),
+			("tools", capabilities.SupportsTools, capabilities.Inconclusive.HasFlag(InconclusiveCapabilities.Tools)),
+			("vision", capabilities.SupportsVision, capabilities.Inconclusive.HasFlag(InconclusiveCapabilities.Vision)),
+			("embeddings", capabilities.SupportsEmbeddings, capabilities.Inconclusive.HasFlag(InconclusiveCapabilities.Embeddings))
+		];
+
+		List<Chip> chips = [];
+
+		foreach ((string label, bool supported, bool inconclusive) in candidates)
+		{
+			// A capability earns a chip when it is supported (a positive fact: confirmed, or fail-open-unconfirmed
+			// for completion) or when its probe was inconclusive (an honest "unknown"); a measured-unsupported
+			// capability is omitted so the cell never reads as noes.
+			if (!supported && !inconclusive) continue;
+
+			// Three visual kinds: a confirmed capability (solid green), completion that stayed inconclusive but is
+			// kept exposed (green, dashed, "?": supported but unverified, fail-open), and an optional capability
+			// that stayed inconclusive (amber "?": off but unverified). Only completion can be supported AND
+			// inconclusive, because its probe is the only fail-open one.
+			string cssClass = (supported, inconclusive) switch
+			{
+				(true, false) => "cap-chip cap-chip-supported",
+				(true, true)  => "cap-chip cap-chip-supported-unconfirmed",
+				var _         => "cap-chip cap-chip-inconclusive"
+			};
+
+			// Page-neutral wording (no "on the Backends page") so the same chip reads correctly wherever it is
+			// rendered, including on the Backends page itself. The phrasing mirrors the inconclusive-probe logs so
+			// the UI and the logs tell the operator the same thing.
+			string title = (supported, inconclusive) switch
+			{
+				(true, false) => $"Supports {label} (confirmed by probe or backend metadata).",
+				(true, true) =>
+					$"The {label} probe stayed inconclusive (it timed out or kept failing), so this is " +
+					"unconfirmed — the model is kept capable anyway (fail-open) and stays exposed. Pin the model " +
+					"to set its capabilities explicitly.",
+				var _ =>
+					$"The {label} probe stayed inconclusive (it timed out or kept failing), so this is " +
+					"unconfirmed — the model may still support it. Pin the model to set its capabilities explicitly."
+			};
+
+			chips.Add(new Chip(cssClass, title, inconclusive ? $"{label} ?" : label));
+		}
+
+		return chips;
+	}
+
+	/// <summary>
+	/// A single rendered capability chip: its CSS class (visual kind), hover tooltip, and visible label text.
+	/// </summary>
+	/// <param name="CssClass">The space-separated CSS classes selecting the chip's visual kind.</param>
+	/// <param name="Title">The hover tooltip explaining what the chip means.</param>
+	/// <param name="Text">The visible label, with a trailing "?" for an unconfirmed capability.</param>
+	private readonly record struct Chip(string CssClass, string Title, string Text);
+
+}

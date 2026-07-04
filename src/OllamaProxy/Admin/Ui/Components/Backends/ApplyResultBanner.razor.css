@@ -1,0 +1,52 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Apply result banner: green on success, amber on a rolled-back rejection, red on a write failure. Sits
+   below the sticky sync bar (not inside it) so long error lists don't push the sticky bar out of reach.
+
+   Width: the page wrapper (.backends-page) is width: max-content, so it grows to its widest child, and by
+   design only the model table should drive that shared width (see Backends.razor.css). A validation message
+   is prose: a long one (e.g. a DataAnnotation failure spelling out a member path) would otherwise become the
+   widest child and stretch every card to match. width: 0 + min-width: 100% removes this banner from the
+   wrapper's max-content calculation while still filling the resolved page width, so the message wraps to the
+   table's width instead of ballooning it (the same taming the status lines get via max-width, expressed as
+   "track the shared width" rather than a fixed reading column). box-sizing keeps the padding inside that width;
+   overflow-wrap breaks a single over-long token instead of overflowing. */
+
+.apply-result {
+    box-sizing: border-box;
+    width: 0;
+    min-width: 100%;
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    border-radius: 0.4rem;
+    overflow-wrap: anywhere;
+}
+
+.apply-result-headline {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.apply-result-errors {
+    margin: 0.4rem 0 0;
+    padding-left: 1.2rem;
+    font-size: 0.85rem;
+}
+
+.apply-result-applied {
+    color: var(--admin-success-text);
+    background-color: var(--admin-success-bg);
+}
+
+.apply-result-rejected {
+    color: var(--admin-warning-text);
+    background-color: var(--admin-warning-bg);
+}
+
+.apply-result-failed {
+    color: var(--admin-danger-text);
+    background-color: var(--admin-danger-bg);
+}

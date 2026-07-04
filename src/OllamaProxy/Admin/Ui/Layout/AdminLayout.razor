@@ -1,0 +1,60 @@
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@inherits LayoutComponentBase
+
+<div class="admin-shell">
+	<header class="admin-shell-header">
+		@* The dark bar spans the viewport; its content is width-limited to align with the page content below. *@
+		<div class="admin-shell-bar">
+			<div class="admin-shell-brand">
+				<span class="admin-shell-title">OllamaProxy</span>
+				<span class="admin-shell-subtitle">Admin</span>
+			</div>
+
+			<nav class="admin-shell-nav">
+				@* Match="all" on Home so it is only active on "/", not on every route that starts with "/". *@
+				<NavLink class="admin-shell-tab" href="" Match="NavLinkMatch.All">Home</NavLink>
+				<NavLink class="admin-shell-tab" href="models">Models</NavLink>
+
+				@* Configuration is a dropdown group: General and Backend Configuration are sibling configuration pages. *@
+				<div class="admin-shell-tab-group"
+				     @onfocusin="() => mConfigMenuExpanded = true"
+				     @onfocusout="() => mConfigMenuExpanded = false">
+					<button type="button"
+					        class="admin-shell-tab-group-label"
+					        aria-haspopup="true"
+					        aria-expanded="@(mConfigMenuExpanded.ToString().ToLowerInvariant())"
+					        aria-controls="admin-shell-configuration-menu">
+						Configuration
+					</button>
+					<div id="admin-shell-configuration-menu" class="admin-shell-tab-group-menu" role="menu" aria-label="Configuration pages">
+						<NavLink class="admin-shell-tab-group-item" href="configuration/general">General</NavLink>
+						<NavLink class="admin-shell-tab-group-item" href="configuration/backends">Backends</NavLink>
+					</div>
+				</div>
+			</nav>
+		</div>
+	</header>
+
+	<main class="admin-shell-main">
+		@* Layout-owned wrapper: @Body renders routed pages under their own CSS scope, so this wrapper (which
+		   we own) is where the shared reading-width is enforced. No ::deep into the page scope required. *@
+		<div class="admin-shell-content">
+			@Body
+		</div>
+	</main>
+</div>
+
+@code {
+
+	/// <summary>
+	/// Whether keyboard focus is currently inside the Configuration dropdown group. The menu opens visually via
+	/// CSS (<c>:hover</c>/<c>:focus-within</c>), so this flag exists only to keep the trigger button's
+	/// <c>aria-expanded</c> honest for screen readers: it is raised on <c>focusin</c> while the button or a menu
+	/// item holds focus and cleared on <c>focusout</c> when focus leaves the group.
+	/// </summary>
+	private bool mConfigMenuExpanded;
+
+}

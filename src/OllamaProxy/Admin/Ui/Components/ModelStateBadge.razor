@@ -1,0 +1,87 @@
+@using System.Diagnostics
+@using OllamaProxy.Admin.Reconciliation
+@using OllamaProxy.Configuration
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@* A reconciled model's state as a coloured pill. This is a thin mapping over the shared <see cref="Badge"/>
+   primitive: it only translates the state enum into a variant and a label, so the pill shape and palette live
+   in one place (Badge.razor.css) rather than being re-declared here. Each state carries a title tooltip that
+   explains what the state means for a backend's models; for <see cref="ReconciledModelState.Discovered"/> the
+   tooltip also reflects whether the backend's mode auto-exposes discovered models. *@
+<Badge Variant="StateVariant(State)" title="@StateDescription(State, Mode)">@StateLabel(State)</Badge>
+
+@code {
+
+	/// <summary>
+	/// The reconciled model state to display as a badge.
+	/// </summary>
+	[Parameter]
+	public required ReconciledModelState State { get; set; }
+
+	/// <summary>
+	/// The backend's operating mode. It affects how the <see cref="ReconciledModelState.Discovered"/> tooltip
+	/// describes exposure: discovered models are auto-exposed in <see cref="OperatingMode.PlugAndPlay"/> and
+	/// <see cref="OperatingMode.Hybrid"/>, but not in <see cref="OperatingMode.Explicit"/>. When absent, the
+	/// conservative <see cref="OperatingMode.Explicit"/> assumption is used for the tooltip.
+	/// </summary>
+	[Parameter]
+	public OperatingMode? Mode { get; set; }
+
+	/// <summary>
+	/// Maps a reconciled state to its badge colour variant.
+	/// </summary>
+	/// <param name="state">The reconciled state to style.</param>
+	/// <returns>The badge variant for the state.</returns>
+	private static BadgeVariant StateVariant(ReconciledModelState state) => state switch
+	{
+		ReconciledModelState.Available   => BadgeVariant.Success,
+		ReconciledModelState.Unavailable => BadgeVariant.Danger,
+		ReconciledModelState.Discovered  => BadgeVariant.Info,
+		var _                            => throw new UnreachableException($"Unhandled reconciled state '{state}'.")
+	};
+
+	/// <summary>
+	/// Gets the human-readable label for a reconciled state's badge.
+	/// </summary>
+	/// <param name="state">The reconciled state to label.</param>
+	/// <returns>The display label for the state.</returns>
+	private static string StateLabel(ReconciledModelState state) => state switch
+	{
+		ReconciledModelState.Available   => "Available",
+		ReconciledModelState.Unavailable => "Unavailable",
+		ReconciledModelState.Discovered  => "Discovered",
+		var _                            => throw new UnreachableException($"Unhandled reconciled state '{state}'.")
+	};
+
+	/// <summary>
+	/// Gets a short description of what a reconciled state means, shown as a tooltip on the badge.
+	/// </summary>
+	/// <param name="state">The reconciled state to describe.</param>
+	/// <param name="mode">The backend's operating mode, which affects the description of discovered models.</param>
+	/// <returns>The tooltip text for the state.</returns>
+	private static string StateDescription(ReconciledModelState state, OperatingMode? mode) => state switch
+	{
+		ReconciledModelState.Available =>
+			"Pinned in the registry and currently reported by the backend.",
+
+		ReconciledModelState.Unavailable =>
+			"Pinned in the registry, but the backend stopped reporting it. The pin is kept so you can decide whether to remove it.",
+
+		ReconciledModelState.Discovered => mode switch
+		{
+			OperatingMode.PlugAndPlay =>
+				"Reported by the backend and auto-exposed because this backend is in PlugAndPlay mode. Pin it to make the exposure explicit.",
+
+			OperatingMode.Hybrid =>
+				"Reported by the backend and auto-exposed because this backend is in Hybrid mode. Pin it to override its settings.",
+
+			OperatingMode.Explicit or var _ =>
+				"Reported by the backend but not exposed because this backend is in Explicit mode. Pin it to expose it."
+		},
+
+		var _ => throw new UnreachableException($"Unhandled reconciled state '{state}'.")
+	};
+
+}

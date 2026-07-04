@@ -1,0 +1,44 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Connection/probing form: capped to a comfortable form width so inputs and hint prose stay tidy and never
+   stretch to the card's full width when the card grows wide for a large model table. */
+
+.backend-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 52rem;
+}
+
+.backend-field label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--admin-text-secondary);
+}
+
+.backend-field input,
+.backend-field select {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+}
+
+.backend-field input:disabled,
+.backend-field select:disabled {
+    background-color: var(--admin-surface-code);
+    opacity: 0.7;
+}
+
+/* Note: the .backend-field-hint rules live in BackendAdvanced.razor.css, not here. BackendSettings renders
+   only the common connection fields (name, provider, URL, key, mode) with no hint prose, so a hint rule in
+   this scoped stylesheet would never match anything. The Advanced disclosure is the only place that renders
+   <p class="backend-field-hint">, and it carries its own copy of the rule (CSS isolation requires it). */

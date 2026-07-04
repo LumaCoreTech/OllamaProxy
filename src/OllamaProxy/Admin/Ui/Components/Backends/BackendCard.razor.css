@@ -1,0 +1,84 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+.backend-card {
+    margin-bottom: 1.25rem;
+    padding: 1rem 1.25rem;
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-card);
+    border-radius: 0.5rem;
+}
+
+/* Card header: an accordion toggle spanning the full card width. Reset the button chrome so it reads as a
+   header row, not a form button, while staying keyboard-focusable and clickable across its whole width. */
+
+.backend-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0;
+    margin-bottom: 0.5rem;
+    font: inherit;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+/* Expand caret: a fixed-width glyph so the name column starts at the same offset whether open or closed. */
+
+.backend-expand-indicator {
+    width: 1rem;
+    color: var(--admin-text-muted);
+}
+
+/* The name takes the auto right margin so the trailing pills (provider, mode) are pushed to the card's right
+   edge. This spreads the header out instead of bunching the pills against the name, which looked cramped. */
+
+.backend-card-name {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-right: auto;
+}
+
+/* Editor body: the connection settings revealed when a card is expanded, laid out as a simple vertical stack
+   of labelled fields. Deliberately uncapped: the page's width concept (see .backends-page) lets the model
+   table drive the card's width, so capping the editor here would trap a wide table and push its rightmost
+   column (the Context input) out past the card's right border. The inner form and prose are width-capped on
+   their own (BackendSettings, BackendAdvanced) so only the table, never the prose, drives the extra width. */
+
+.backend-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--admin-border-table);
+}
+
+.backend-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Remove backend: a destructive action, so it is the only red control on the card. */
+
+.backend-remove {
+    padding: 0.35rem 0.9rem;
+    font-size: 0.85rem;
+    color: var(--admin-danger-text);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-danger-border);
+    border-radius: 0.3rem;
+    cursor: pointer;
+}
+
+.backend-remove:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+/* Note: the mode badge in the card header renders through the shared Badge primitive (Variant="Neutral"), so
+   its pill shape and palette live in Badge.razor.css, not here. A local .backend-mode-badge rule would be both
+   redundant and unreachable (the badge's <span> carries Badge's scope, not this component's). */

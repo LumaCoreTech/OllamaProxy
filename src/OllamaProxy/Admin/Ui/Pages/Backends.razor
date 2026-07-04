@@ -1,0 +1,1552 @@
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@page "/configuration/backends"
+@using System.Diagnostics
+@using System.Text.Json
+@using OllamaProxy.Admin.Fetch
+@using OllamaProxy.Admin.Reconciliation
+@using OllamaProxy.Configuration
+@using OllamaProxy.Core
+@using OllamaProxy.Providers.Abstractions
+@implements IAsyncDisposable
+@inject IAdminModelService AdminModelService
+@inject IProviderCatalog   ProviderCatalog
+@inject IJSRuntime         JS
+@inject NavigationManager  Nav
+
+<PageTitle>OllamaProxy Admin — Backend Configuration</PageTitle>
+
+@* One shared width for the whole page: the wrapper sizes to its widest child (the widest model table), and the
+   header, every card and the sync bar fill it, so all right edges line up and a wide table never leaves one card
+   jutting out past the others. Form prose is width-capped (see CSS) so only tables can drive this width. *@
+<div class="backends-page">
+	<div class="backends-header">
+		<h1>Backend Configuration</h1>
+		<button type="button" class="backends-add" @onclick="AddBackend" disabled="@(mDraft is null || IsBusy)">
+			Add backend
+		</button>
+	</div>
+
+	@if (IsDirty)
+	{
+		<DirtyBanner Visible="true"/>
+	}
+
+	@if (mDraft is null)
+	{
+		<p class="backends-status">Loading configuration…</p>
+	}
+	else
+	{
+		@if (mDraft.Backends.Count == 0)
+		{
+			<p class="backends-status">No backends are configured. Add one to get started.</p>
+		}
+		else
+		{
+			@foreach (DesiredBackend backend in mDraft.Backends)
+			{
+				<BackendCard
+					Backend="backend"
+					Expanded="@IsExpanded(backend)"
+					AdvancedExpanded="@IsAdvancedExpanded(backend)"
+					IsBusy="@IsBusy"
+					ModeIgnoresPins="@ModeIgnoresPins(backend)"
+					DuplicateModelNames="@DuplicateModelNamesFor(backend)"
+					State="ModelState(backend)"
+					Reconciliation="ReconciliationFor(backend)"
+					ProviderCatalog="ProviderCatalog"
+					OnToggleExpand="@(() => ToggleExpandAsync(backend))"
+					OnAdvancedToggle="@(EventCallback.Factory.Create(this, () => ToggleAdvanced(backend)))"
+					OnProviderTypeChanged="@(value =>
+					                       {
+						                       SetProviderType(backend, value);
+						                       NotifyConfigurationChanged();
+					                       })"
+					OnModeChanged="@(value =>
+					               {
+						               backend.Options.Mode = value;
+						               NotifyConfigurationChanged();
+					               })"
+					OnModelPrefixChanged="@(value =>
+					                      {
+						                      SetModelPrefix(backend, value);
+						                      NotifyConfigurationChanged();
+					                      })"
+					OnConfigurationChanged="@(() => NotifyConfigurationChanged())"
+					OnRefreshModels="@(() => RefreshModelsAsync(backend))"
+					OnProbeModels="@(() => ProbeModelsAsync(backend))"
+					OnCancelProbe="@(() => CancelProbe(backend))"
+					OnTogglePin="@(model =>
+					             {
+						             TogglePin(backend, model);
+						             NotifyConfigurationChanged();
+					             })"
+					OnAddVariant="@(model =>
+					              {
+						              AddPinVariant(backend, model);
+						              NotifyConfigurationChanged();
+					              })"
+					OnToggleModelDetails="@(model => ToggleModelDetails(backend, model))"
+					IsDetailsExpanded="@(model => IsModelDetailsExpanded(backend, model))"
+					GetPinnedName="@(model => model.Name)"
+					OnSetPinnedName="@(arg =>
+					                 {
+						                 SetPinnedName(backend, arg.Model, arg.Value);
+						                 NotifyConfigurationChanged();
+					                 })"
+					GetPinnedReasoning="@(model => GetPinnedReasoning(backend, model))"
+					OnSetPinnedReasoning="@(arg =>
+					                      {
+						                      SetPinnedReasoning(backend, arg.Model, arg.Value);
+						                      NotifyConfigurationChanged();
+					                      })"
+					GetContextOverride="@(model => GetContextOverride(backend, model))"
+					OnSetContextOverride="@(arg =>
+					                      {
+						                      SetContextOverride(backend, arg.Model, arg.Value);
+						                      NotifyConfigurationChanged();
+					                      })"
+					OnSetPinnedCapability="@(arg =>
+					                       {
+						                       SetPinnedCapability(backend, arg.Model, arg.Capability, arg.Value);
+						                       NotifyConfigurationChanged();
+					                       })"
+					OnRemove="@(() => RemoveBackend(backend))"/>
+			}
+		}
+
+		<ApplyBar
+			@ref="mApplyBar"
+			StructuralError="@StructuralError"
+			IsBusy="@IsBusy"
+			IsApplying="@mIsApplying"
+			IsDiscarding="@mIsLoading"
+			CanDiscard="@IsDirty"
+			CanApply="@IsDirty"
+			OnApply="@SyncAsync"
+			OnDiscard="@DiscardAsync"/>
+
+		<ApplyResultBanner Outcome="mApplyResult?.Outcome" Errors="mApplyResult?.Errors"/>
+	}
+</div>
+
+@code {
+
+	/// <summary>
+	/// The editable draft of the whole proxy configuration, or <see langword="null"/> until the first load
+	/// completes. The editor binds directly to this draft; it is a standalone deep copy of the live configuration,
+	/// so two-way binding never reaches back into the running proxy.
+	/// </summary>
+	private DesiredProxyState? mDraft;
+
+	/// <summary>
+	/// The backend whose editor is currently expanded, or <see langword="null"/> when all are collapsed. Only one
+	/// backend is expanded at a time; opening another collapses the previous one. Reset to <see langword="null"/>
+	/// on every load because the reloaded draft replaces every backend instance.
+	/// </summary>
+	private DesiredBackend? mExpanded;
+
+	/// <summary>
+	/// Whether a configuration load is currently running. Drives the refresh button's label and disabled state and
+	/// guards <see cref="LoadAsync"/> against re-entrancy.
+	/// </summary>
+	private bool mIsLoading;
+
+	/// <summary>
+	/// Whether an apply (whole-state write plus recycle) is currently running. Disables the editor controls and
+	/// guards <see cref="SyncAsync"/> against re-entrancy.
+	/// </summary>
+	private bool mIsApplying;
+
+	/// <summary>
+	/// The outcome of the most recent apply, or <see langword="null"/> before the first one. Drives the result
+	/// banner; cleared when a new apply starts and when the operator refreshes.
+	/// </summary>
+	private ApplyResult? mApplyResult;
+
+	/// <summary>
+	/// The rendered sync bar, captured so the Ctrl+Enter shortcut can move focus straight to the Apply/Discard
+	/// controls. <see langword="null"/> until the draft has loaded and the bar has rendered.
+	/// </summary>
+	private ApplyBar? mApplyBar;
+
+	/// <summary>
+	/// The JSON snapshot of the draft as it stood when <see cref="LoadAsync"/> (or a successful apply's
+	/// post-apply reload) last succeeded. <see cref="IsDirty"/> re-serializes the current <see cref="mDraft"/>
+	/// on every read and compares it to this fingerprint, so a field the operator has not touched (but is
+	/// part of the draft object) produces no diff. <see langword="null"/> between component construction and
+	/// the first successful load, in which case <see cref="IsDirty"/> is conservatively <see langword="false"/>
+	/// (there is nothing to compare against, so the operator has not had a chance to dirty the page yet).
+	/// </summary>
+	private string? mLoadedSnapshotJson;
+
+	/// <summary>
+	/// The loaded <c>adminDirtyGuard</c> JS module, imported on the first interactive render and used to push the
+	/// dirty status to the browser so <see langword="beforeunload"/> knows whether to confirm. <see langword="null"/>
+	/// during prerender and after <see cref="DisposeAsync"/>; calls into it are guarded accordingly so the page never
+	/// throws on a missing module.
+	/// </summary>
+	private IJSObjectReference? mDirtyModule;
+
+	/// <summary>
+	/// The loaded <c>adminCommitShortcut</c> JS module, imported on the first interactive render. It owns a
+	/// window-level <c>keydown</c> listener that watches for Ctrl+Enter and calls back into
+	/// <see cref="JumpToCommitBarAsync"/>, giving the operator a keyboard jump to the commit bar from anywhere on
+	/// the page. <see langword="null"/> during prerender and after <see cref="DisposeAsync"/>.
+	/// </summary>
+	private IJSObjectReference? mCommitShortcutModule;
+
+	/// <summary>
+	/// The <see cref="DotNetObjectReference{T}"/> to this component handed to <see cref="mCommitShortcutModule"/>
+	/// so its Ctrl+Enter listener can invoke <see cref="JumpToCommitBarAsync"/>. Held for the component's lifetime
+	/// and disposed in <see cref="DisposeAsync"/> so the interop handle is not leaked.
+	/// </summary>
+	private DotNetObjectReference<Backends>? mCommitShortcutRef;
+
+	/// <summary>
+	/// The <see cref="IDisposable"/> token returned by <see cref="NavigationManager.RegisterLocationChangingHandler"/>,
+	/// held so <see cref="DisposeAsync"/> can deregister the in-app navigation guard. The handler consults
+	/// <see cref="IsDirty"/> to decide whether to prompt the operator before they leave the page.
+	/// </summary>
+	private IDisposable? mLocationChangingRegistration;
+
+	/// <summary>
+	/// Cancellation scope for the in-flight load or apply. Replaced on each <see cref="LoadAsync"/> call and
+	/// cancelled on <see cref="DisposeAsync"/>, so neither operation outlives the component's circuit.
+	/// </summary>
+	private CancellationTokenSource? mCts;
+
+	/// <summary>
+	/// Serializes every <c>setDirty</c> push to the JS dirty-guard module. The render thread is single-threaded,
+	/// but each push is awaited across an <see langword="await"/> point and a streaming probe's
+	/// <see cref="ComponentBase.StateHasChanged"/> can re-enter <see cref="OnAfterRenderAsync"/> before an
+	/// in-flight push has returned. Without serialization, an older "clean" push landing after a newer "dirty"
+	/// push would tell the browser the page is clean when it is not, and <see langword="beforeunload"/> would
+	/// silently let the operator close a dirty tab. The semaphore keeps pushes strictly ordered at the cost of
+	/// one async wait per push, which is invisible in practice.
+	/// </summary>
+	private readonly SemaphoreSlim mDirtyPushLock = new(1, 1);
+
+	/// <summary>
+	/// The per-backend model-list state (cached raw snapshot, in-flight flag, last error), keyed by the
+	/// <see cref="DesiredBackend"/> instance the card binds to. A backend's snapshot is fetched lazily the first
+	/// time its card expands and then reused for every local re-reconciliation, so pinning, unpinning, or
+	/// switching mode never triggers another fetch. Only an explicit Refresh or Probe does. Keying by reference
+	/// (not name) means a rename keeps the same cached snapshot, and a reload replaces every backend instance,
+	/// which naturally orphans the old entries, so the dictionary is cleared on load to release them.
+	/// </summary>
+	private readonly Dictionary<DesiredBackend, ModelListState> mModelLists = [];
+
+	/// <summary>
+	/// The backends whose "Advanced" section is currently expanded, keyed by the <see cref="DesiredBackend"/>
+	/// instance the card binds to. The advanced fields (context length, model prefix, reasoning effort, capability
+	/// probing) are rarely changed, so they stay collapsed by default and the operator opens them per backend.
+	/// Keyed by reference like <see cref="mModelLists"/>, so a rename keeps the section state. A reload replaces
+	/// every backend instance and orphans the old entries; the set is cleared on load to release them.
+	/// </summary>
+	private readonly HashSet<DesiredBackend> mAdvancedExpanded = [];
+
+	/// <summary>
+	/// The model rows whose metadata detail panel is currently expanded, keyed by the owning
+	/// <see cref="DesiredBackend"/> instance and the model's bare client-facing name. The bare name is the row's
+	/// per-pin identity. The upstream id no longer identifies a single row, since several pins may deliberately
+	/// share one, so reconciliation rebuilding the <see cref="ReconciledModel"/> rows on every render does not lose
+	/// the expansion. Renaming a pin closes its open panel (its identity changed), a negligible disclosure detail.
+	/// Keyed by the backend reference like <see cref="mModelLists"/>. A reload replaces every backend instance and
+	/// orphans the old entries; the set is cleared on load and a removed backend's entries are dropped.
+	/// </summary>
+	private readonly HashSet<(DesiredBackend Backend, string ModelName)> mExpandedModelDetails = [];
+
+	/// <summary>
+	/// Gets whether a load or apply is in flight, so every interactive control can disable itself with one check.
+	/// </summary>
+	private bool IsBusy => mIsLoading || mIsApplying;
+
+	/// <summary>
+	/// Gets the structural problem that would make the desired state impossible to key by name: a blank backend
+	/// name or duplicate names (compared case-insensitively, as the routing layer keys them). Returns
+	/// <see langword="null"/> when the draft is structurally sound. These are exactly the two conditions
+	/// <see cref="IAdminModelService.ApplyDesiredStateAsync"/> throws an <see cref="ArgumentException"/> for, so the
+	/// editor blocks Apply on them client-side rather than letting the call throw. Domain rules (URL shape, key
+	/// length, …) are left to the recycle's dry-run, which reports them as a graceful rejection.
+	/// </summary>
+	private string? StructuralError
+	{
+		get
+		{
+			if (mDraft is null || mDraft.Backends.Count == 0)
+			{
+				// An empty configuration is not a structural key collision; the dry-run rejects it gracefully as
+				// "at least one backend is required", so Apply stays enabled to surface that as a normal rejection.
+				return null;
+			}
+
+			if (mDraft.Backends.Any(backend => string.IsNullOrWhiteSpace(backend.Name)))
+			{
+				return "Every backend needs a non-blank name.";
+			}
+
+			List<string> duplicates = mDraft.Backends
+				.GroupBy(backend => backend.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+				.Where(group => group.Count() > 1)
+				.Select(group => group.Key)
+				.ToList();
+
+			return duplicates.Count > 0
+				       ? $"Backend names must be unique. Duplicated: {string.Join(", ", duplicates)}."
+				       : null;
+		}
+	}
+
+	/// <summary>
+	/// Loads the editable draft when the page is initialized.
+	/// </summary>
+	/// <returns>A task that completes when the initial load has finished (or been cancelled).</returns>
+	protected override Task OnInitializedAsync()
+	{
+		// Register the in-app navigation guard before the first render. NavigationManager.RegisterLocationChangingHandler
+		// is the .NET 8+ seam for intercepting intra-SPA navigation; the handler consults mIsDirty and prompts the
+		// operator before letting a route change commit when the draft has unsaved edits.
+		mLocationChangingRegistration = Nav.RegisterLocationChangingHandler(ConfirmNavigationAsync);
+
+		return LoadAsync();
+	}
+
+	/// <summary>
+	/// Brings the JS dirty-guard module online on the first interactive render, and on every subsequent render
+	/// pushes the fresh dirty status to the JS module so the browser's <see langword="beforeunload"/> listener
+	/// tracks the current draft. Prerender runs without JS, so the module is imported on the first interactive
+	/// render; the module is detached in <see cref="DisposeAsync"/> so a circuit teardown does not leave a listener
+	/// behind on the next page that visits the same browser tab.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="IsDirty"/> is uncached, so reading it during <c>BuildRenderTree</c> already reflects the live
+	/// draft: the markup and the JS push agree by construction. We still push on every render so the JS
+	/// module stays in sync without depending on the next user action to fire a render.
+	/// </remarks>
+	/// <param name="firstRender">Whether this is the first render of the component.</param>
+	/// <returns>A task that completes once the per-render maintenance has run.</returns>
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			try
+			{
+				mDirtyModule = await JS.InvokeAsync<IJSObjectReference>("import", "./adminDirtyGuard.js")
+					               .ConfigureAwait(true);
+
+				await mDirtyModule.InvokeVoidAsync("attach").ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// The circuit was torn down between the prerender and the interactive render (for example a
+				// refresh immediately after navigation). Nothing to attach; the page is gone.
+				return;
+			}
+			catch (JSException ex)
+			{
+				// A failure to load the module is non-fatal: the in-app location-changing handler still blocks
+				// dirty navigation, and the unsaved-changes banner still shows. The beforeunload guard is the
+				// one piece we lose, and it is a defense-in-depth, not the primary safety net.
+				throw new InvalidOperationException(
+					"Failed to initialize the admin unsaved-changes guard. The page still works, " +
+					"but closing the browser tab will not prompt before discarding edits.",
+					ex);
+			}
+
+			try
+			{
+				// Wire up the Ctrl+Enter jump to the commit bar. This is a pure accessibility convenience, so its
+				// failure is swallowed rather than surfaced: plain tabbing still reaches the bar. The module keeps a
+				// DotNetObjectReference to this component so its keydown listener can call JumpToCommitBarAsync();
+				// it is disposed alongside the module in DisposeAsync().
+				mCommitShortcutRef = DotNetObjectReference.Create(this);
+				mCommitShortcutModule = await JS.InvokeAsync<IJSObjectReference>("import", "./adminCommitShortcut.js")
+					                        .ConfigureAwait(true);
+
+				await mCommitShortcutModule.InvokeVoidAsync("attach", mCommitShortcutRef).ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// The circuit was torn down mid-import; nothing to attach and nothing to clean up beyond the
+				// reference, which DisposeAsync handles.
+				return;
+			}
+			catch (JSException)
+			{
+				// The shortcut module failed to load. The keyboard jump is unavailable, but every other path to
+				// the commit bar still works, so there is nothing to report to the operator.
+			}
+		}
+
+		// Push the current dirty status to the JS module on every render so the browser's beforeunload guard
+		// agrees with the .NET truth. The push is serialized through mDirtyPushLock so concurrent re-entries
+		// from a streaming probe's StateHasChanged never let an older "clean" push overwrite a newer "dirty" one.
+		// The push is best-effort: a torn-down circuit or a not-yet-attached module (firstRender failed above
+		// and returned) means we just skip the push and rely on the next render.
+		await PushDirtyStateAsync(IsDirty).ConfigureAwait(true);
+	}
+
+	/// <summary>
+	/// The navigation-changing handler registered with <see cref="NavigationManager"/>. When the draft is dirty
+	/// and the operator tries to leave the page, the navigation is blocked and a browser-native confirm dialog
+	/// asks them whether they really want to discard the edits. A clean draft passes through immediately. The
+	/// confirm is awaited (rather than synchronously blocked) so we do not stall the Blazor render thread on a
+	/// dialog that can take seconds for the operator to answer.
+	/// </summary>
+	/// <param name="context">The in-flight navigation request.</param>
+	/// <returns>A task that completes once the operator has decided (or the navigation was approved).</returns>
+	private async ValueTask ConfirmNavigationAsync(LocationChangingContext context)
+	{
+		// A clean draft never blocks: the operator either just loaded the page or successfully applied, so a
+		// navigation away is unambiguously safe.
+		if (!IsDirty)
+		{
+			return;
+		}
+
+		try
+		{
+			// The browser's own confirm() is the simplest available prompt: it is universally supported and
+			// renders a recognizable "leave site?" dialog. A custom modal would be nicer but is not worth the
+			// complexity for a single-page surface that is the only place this matters.
+			bool discard = await JS
+				               .InvokeAsync<bool>(
+					               "confirm",
+					               "You have unsaved changes. Leave this page and discard them?")
+				               .ConfigureAwait(true);
+
+			if (!discard)
+			{
+				context.PreventNavigation();
+			}
+		}
+		catch (JSDisconnectedException)
+		{
+			// The circuit was torn down while we waited for the operator's answer. There is nothing left to
+			// navigate to, so let the framework decide.
+		}
+	}
+
+	/// <summary>
+	/// Reloads the draft from the live configuration, discarding any unsaved edits, and clears the apply banner.
+	/// This is the explicit discard action; the post-apply reload goes through <see cref="LoadAsync"/> directly so
+	/// the success banner survives.
+	/// </summary>
+	/// <returns>A task that completes when the reload has finished or been cancelled.</returns>
+	private Task DiscardAsync()
+	{
+		mApplyResult = null;
+		return LoadAsync();
+	}
+
+	/// <summary>
+	/// Moves keyboard focus to the sync bar in response to the Ctrl+Enter shortcut handled by
+	/// <c>adminCommitShortcut.js</c>. It lets the operator jump to the Apply and Discard controls from anywhere on
+	/// the page without scrolling or tabbing back down. Invoked by the JS module on the interop thread.
+	/// </summary>
+	/// <returns>A task that completes once focus has moved, or immediately if the bar has not rendered yet.</returns>
+	[JSInvokable]
+	public async Task JumpToCommitBarAsync()
+	{
+		if (mApplyBar is not null)
+		{
+			await mApplyBar.FocusAsync();
+		}
+	}
+
+	/// <summary>
+	/// Loads the editable draft from the admin service, replacing <see cref="mDraft"/> on success and collapsing
+	/// every backend. Re-entrant calls are ignored while a load is in flight; a cancelled load (circuit teardown)
+	/// is dropped silently. The apply banner is intentionally left untouched so a post-apply reload keeps showing
+	/// the success result.
+	/// </summary>
+	/// <returns>A task that completes when the load has finished or been cancelled.</returns>
+	private async Task LoadAsync()
+	{
+		// The refresh button is disabled while loading; this guard is the matching server-side defense.
+		if (mIsLoading) return;
+
+		// Cancel any in-flight streaming probe before the scope is replaced: disposing mCts (below) does not cancel
+		// its linked children, so without this an orphaned probe would keep hitting a backend after a reload. A
+		// circuit teardown takes the other path (Dispose cancels mCts, which cascades to the linked probe tokens).
+		CancelInFlightProbes();
+
+		// Dispose the previous (completed) scope before opening a fresh one. There is never a concurrent load
+		// thanks to the guard above, so disposing here cannot cancel an active operation.
+		mCts?.Dispose();
+		mCts = new CancellationTokenSource();
+
+		mIsLoading = true;
+		try
+		{
+			DesiredProxyState draft = await AdminModelService.GetEditableStateAsync(mCts.Token);
+			mDraft = draft;
+
+			// The previous expansion referenced a backend from the now-replaced draft; collapse all so the
+			// reloaded cards start from a clean overview.
+			mExpanded = null;
+
+			// Every cached model list belonged to a backend instance from the old draft, which the new draft has
+			// replaced wholesale; drop them so each reloaded card fetches its snapshot fresh on first expand.
+			mModelLists.Clear();
+
+			// The advanced sections were keyed to the now-replaced backend instances too; collapse them all so the
+			// reloaded cards start from the same default (advanced collapsed) as a fresh page load.
+			mAdvancedExpanded.Clear();
+
+			// Likewise the expanded model-detail panels referenced the now-replaced backend instances; drop them so
+			// every reloaded card starts with all detail panels collapsed.
+			mExpandedModelDetails.Clear();
+
+			// A fresh load reflects exactly what is on disk, so the draft is by definition clean: a reload
+			// (explicit or post-apply) is how the operator discards edits, and we must not keep nagging them about
+			// changes that no longer exist.
+			await MarkCleanAsync();
+		}
+		catch (OperationCanceledException)
+		{
+			// The circuit was torn down (Dispose) while the load was in flight; abandon the stale result.
+		}
+		finally
+		{
+			mIsLoading = false;
+		}
+	}
+
+	/// <summary>
+	/// Clears a stale success banner when the operator makes any configuration-affecting edit after a successful
+	/// apply. Called from mutation paths so the reset happens before the next render.
+	/// </summary>
+	private void NotifyConfigurationChanged()
+	{
+		if (mApplyResult?.Outcome == ApplyOutcome.Applied)
+		{
+			mApplyResult = null;
+		}
+	}
+
+	/// <summary>
+	/// Adds a new, empty backend to the draft with a generated unique name and the provider defaults, then expands
+	/// it for editing. The new backend has no <see cref="DesiredBackend.OriginalName"/>, so its blank API key is a
+	/// genuinely missing secret rather than a "keep the saved one" sentinel.
+	/// </summary>
+	private void AddBackend()
+	{
+		if (mDraft is null) return;
+
+		BackendOptions options = new();
+		options.BaseUrl = ProviderCatalog.DefaultBaseUrlFor(options.ProviderType);
+
+		DesiredBackend backend = new()
+		{
+			Name = GenerateBackendName(),
+			OriginalName = null,
+			Options = options
+		};
+
+		mDraft.Backends.Add(backend);
+		mExpanded = backend;
+		NotifyConfigurationChanged();
+	}
+
+	/// <summary>
+	/// Removes a backend from the draft and collapses the editor if the removed backend was the expanded one. The
+	/// removal takes effect on disk only when the draft is applied.
+	/// </summary>
+	/// <param name="backend">The backend to remove from the draft.</param>
+	private void RemoveBackend(DesiredBackend backend)
+	{
+		if (mDraft is null) return;
+
+		mDraft.Backends.Remove(backend);
+
+		// Cancel any in-flight streaming probe for the removed backend before dropping its cached state, so the
+		// orphaned probe stops hitting the backend instead of running to completion against a card that is gone.
+		try
+		{
+			ModelState(backend).ProbeCts?.Cancel();
+		}
+		catch (ObjectDisposedException)
+		{
+			// The probe already ended and disposed its CTS; nothing left to cancel.
+		}
+
+		// Release the removed backend's cached snapshot so it does not linger keyed to a dropped instance.
+		mModelLists.Remove(backend);
+
+		// Drop the advanced-section state for the same reason: nothing should stay keyed to a removed instance.
+		mAdvancedExpanded.Remove(backend);
+
+		// Drop any expanded model-detail panels for this backend so nothing lingers keyed to a removed instance.
+		mExpandedModelDetails.RemoveWhere(entry => ReferenceEquals(entry.Backend, backend));
+
+		if (IsExpanded(backend))
+		{
+			mExpanded = null;
+		}
+
+		NotifyConfigurationChanged();
+	}
+
+	/// <summary>
+	/// Toggles a backend's editor: expands it when collapsed, collapses it when already expanded. Expanding a
+	/// backend implicitly collapses any other, since only one expansion is tracked. Expanding also lazily fetches
+	/// the backend's model snapshot the first time, so a card that is never opened never pays for a fetch.
+	/// </summary>
+	/// <param name="backend">The backend whose editor is toggled.</param>
+	/// <returns>A task that completes when the toggle (and any first-time fetch) has finished.</returns>
+	private Task ToggleExpandAsync(DesiredBackend backend)
+	{
+		if (IsExpanded(backend))
+		{
+			mExpanded = null;
+			return Task.CompletedTask;
+		}
+
+		mExpanded = backend;
+
+		// Fetch the snapshot only on the first expand; a cached entry (even a failed one) is reused so reopening a
+		// card is instant. An explicit Refresh or Probe is the way to re-fetch.
+		if (!mModelLists.ContainsKey(backend))
+		{
+			return FetchModelsAsync(backend, DiscoveryProbePolicy.NeverProbe);
+		}
+		return Task.CompletedTask;
+	}
+
+	/// <summary>
+	/// Gets whether a backend's editor is currently expanded.
+	/// </summary>
+	/// <param name="backend">The backend to test.</param>
+	/// <returns><see langword="true"/> when <paramref name="backend"/> is the expanded one.</returns>
+	private bool IsExpanded(DesiredBackend backend) => ReferenceEquals(mExpanded, backend);
+
+	/// <summary>
+	/// Gets whether a backend's "Advanced" section is currently expanded. It defaults to collapsed, since the
+	/// advanced fields are rarely changed.
+	/// </summary>
+	/// <param name="backend">The backend to test.</param>
+	/// <returns><see langword="true"/> when <paramref name="backend"/>'s advanced section is open.</returns>
+	private bool IsAdvancedExpanded(DesiredBackend backend) => mAdvancedExpanded.Contains(backend);
+
+	/// <summary>
+	/// Toggles a backend's "Advanced" section open or closed. Unlike the card expansion, several backends' advanced
+	/// sections can be open at once: it is a local disclosure, not a single-selection accordion.
+	/// </summary>
+	/// <param name="backend">The backend whose advanced section is toggled.</param>
+	private void ToggleAdvanced(DesiredBackend backend)
+	{
+		if (!mAdvancedExpanded.Add(backend))
+		{
+			mAdvancedExpanded.Remove(backend);
+		}
+	}
+
+	/// <summary>
+	/// Gets whether a model row's metadata detail panel is currently expanded. Keyed by the backend instance and
+	/// the model's bare client-facing name (the row's per-pin identity), so the panel state survives the
+	/// reconciliation that rebuilds the row on every render. A rename changes that identity and so closes an open
+	/// panel.
+	/// </summary>
+	/// <param name="backend">The backend owning the model row.</param>
+	/// <param name="model">The reconciled model row to test.</param>
+	/// <returns><see langword="true"/> when the row's detail panel is open.</returns>
+	private bool IsModelDetailsExpanded(DesiredBackend backend, ReconciledModel model) => mExpandedModelDetails.Contains((backend, model.Name));
+
+	/// <summary>
+	/// Toggles a model row's metadata detail panel open or closed. Several panels can be open at once: it is a
+	/// per-row disclosure, not a single-selection accordion.
+	/// </summary>
+	/// <param name="backend">The backend owning the model row.</param>
+	/// <param name="model">The reconciled model row whose detail panel to toggle.</param>
+	private void ToggleModelDetails(DesiredBackend backend, ReconciledModel model)
+	{
+		(DesiredBackend, string) key = (backend, model.Name);
+		if (!mExpandedModelDetails.Add(key))
+		{
+			mExpandedModelDetails.Remove(key);
+		}
+	}
+
+	/// <summary>
+	/// Applies the current draft as the whole desired state (one write plus one recycle) and renders the outcome.
+	/// On success the draft is reloaded so it reflects the now-live, normalized configuration (and re-blanks the
+	/// API keys); on any non-success outcome the previous configuration stays live and the edits are kept for a
+	/// retry. Apply is blocked client-side while <see cref="StructuralError"/> is set, so the service's structural
+	/// <see cref="ArgumentException"/> guards are never reached.
+	/// </summary>
+	/// <returns>A task that completes when the apply (and any reload) has finished.</returns>
+	private async Task SyncAsync()
+	{
+		// Re-entrancy guard mirroring the disabled button, plus the structural and dirty gates so a blank,
+		// duplicate, or unchanged configuration never reaches the service.
+		if (mDraft is null || mIsApplying || StructuralError is not null || !IsDirty) return;
+
+		mIsApplying = true;
+		mApplyResult = null;
+		try
+		{
+			ApplyResult result = await AdminModelService.ApplyDesiredStateAsync(mDraft, mCts!.Token);
+			mApplyResult = result;
+
+			// Only a live change invalidates the draft; a rejected or failed apply left the previous configuration
+			// on disk, so the edits stay as-is for a retry. A successful apply reloads the draft through LoadAsync,
+			// which itself calls MarkCleanAsync, so the dirty flag is cleared at the source (a fresh draft mirrors
+			// exactly what is now live on disk) and no separate MarkClean is needed here.
+			if (result.Success)
+			{
+				await LoadAsync();
+			}
+		}
+		catch (OperationCanceledException)
+		{
+			// The circuit was torn down mid-apply; drop the result silently like the load path does.
+		}
+		finally
+		{
+			mIsApplying = false;
+		}
+	}
+
+	/// <summary>
+	/// Re-fetches a backend's model snapshot without probing. This is the operator's explicit "I changed the URL or
+	/// provider, show me the current models" action. It runs against the draft's unsaved connection settings, so a
+	/// pending edit is reflected without committing first.
+	/// </summary>
+	/// <param name="backend">The backend whose snapshot to refresh.</param>
+	/// <returns>A task that completes when the refresh has finished or been cancelled.</returns>
+	private Task RefreshModelsAsync(DesiredBackend backend) => FetchModelsAsync(backend, DiscoveryProbePolicy.NeverProbe);
+
+	/// <summary>
+	/// Re-fetches a backend's model snapshot with full capability probing
+	/// (<see cref="DiscoveryProbePolicy.ProbeAll"/>). This is the on-demand enrichment for a capability-poor backend
+	/// (for example a strict OpenAI endpoint that lists no capability metadata). Unlike <see cref="RefreshModelsAsync"/>,
+	/// which buffers the whole snapshot, a probe can be slow per model (a cold model must load before it answers),
+	/// so this <em>streams</em> the candidates in, filling the table model-by-model with a live count and a Cancel
+	/// button rather than blocking on the slowest one. Like the refresh it runs against the draft's unsaved settings.
+	/// </summary>
+	/// <param name="backend">The backend whose capabilities to probe.</param>
+	/// <returns>A task that completes when the probe has finished, failed, or been cancelled.</returns>
+	private Task ProbeModelsAsync(DesiredBackend backend) => StreamProbeAsync(backend);
+
+	/// <summary>
+	/// Streams a backend's capability probe, replacing its cached snapshot as each candidate arrives so the table
+	/// fills in model-by-model. The candidates arrive in client-name order (the same order the <see cref="Reconcile"/>
+	/// seam sorts them into), so the table fills top-to-bottom: each arrival is accumulated and the snapshot is
+	/// replaced with a growing copy, and a slow-loading model delays only the rows beneath it rather than popping in
+	/// out of sequence. The probe is cancelable through its own <see cref="ModelListState.ProbeCts"/> (linked to the
+	/// page scope), and a fault surfaces as a classified <see cref="BackendFetchException"/> captured into the
+	/// row's error.
+	/// </summary>
+	/// <param name="backend">The backend to probe.</param>
+	/// <returns>A task that completes when the stream ends, faults, or is cancelled.</returns>
+	private async Task StreamProbeAsync(DesiredBackend backend)
+	{
+		if (mDraft is null) return;
+
+		ModelListState state = ModelState(backend);
+
+		// A second fetch while one is already running would race two snapshots into the same cache slot; the buttons
+		// are disabled during a fetch, and this guard is the matching server-side defense.
+		if (state.IsFetching) return;
+
+		// Link the probe's own scope to the page scope so a circuit teardown (which cancels mCts) cancels the probe
+		// too, while the Cancel button can stop just this probe without tearing down the page's load scope.
+		var probeCts = CancellationTokenSource.CreateLinkedTokenSource(mCts!.Token);
+
+		// Accumulate arrivals in a fresh list and publish a copy each time: the cached snapshot must stay an
+		// immutable value the reconciler can read on any render without seeing a half-mutated list.
+		List<DiscoveryCandidate> resolved = [];
+
+		// Start streaming: clear any prior error/snapshot so the table starts empty and the progress banner shows,
+		// and expose the probe's CTS so the Cancel button can signal it.
+		mModelLists[backend] = state with
+		{
+			Snapshot = null,
+			IsFetching = true,
+			IsStreaming = true,
+			ProbedCount = 0,
+			Error = null,
+			ProbeCts = probeCts
+		};
+
+		try
+		{
+			await foreach (DiscoveryCandidate candidate in AdminModelService
+				               .ProbeDraftStreamingAsync(backend, DiscoveryProbePolicy.ProbeAll, probeCts.Token))
+			{
+				resolved.Add(candidate);
+
+				// Publish a growing snapshot copy so the table re-renders with one more row; InteractiveServer streams
+				// each update to the browser, so the operator watches the list fill in rather than waiting for the end.
+				mModelLists[backend] = ModelState(backend) with
+				{
+					Snapshot = resolved.ToArray(),
+					ProbedCount = resolved.Count
+				};
+
+				StateHasChanged();
+			}
+
+			// The stream completed: settle into a normal loaded snapshot, clearing the streaming flags. An empty
+			// result is a valid "backend reports no models" outcome, so a non-null empty snapshot is published.
+			mModelLists[backend] = ModelState(backend) with
+			{
+				Snapshot = resolved,
+				IsFetching = false,
+				IsStreaming = false,
+				ProbeCts = null
+			};
+		}
+		catch (OperationCanceledException) when (mCts is null || mCts.IsCancellationRequested)
+		{
+			// The circuit was torn down mid-probe; drop the result. The stale flags die with the circuit.
+		}
+		catch (OperationCanceledException)
+		{
+			// The operator cancelled this probe. Keep the candidates resolved so far as a normal snapshot (the work
+			// already done is still useful) and just clear the streaming flags so the banner and Cancel button drop.
+			mModelLists[backend] = ModelState(backend) with
+			{
+				Snapshot = resolved.Count > 0 ? resolved : null,
+				IsFetching = false,
+				IsStreaming = false,
+				ProbeCts = null
+			};
+		}
+		catch (BackendFetchException ex)
+		{
+			// The backend listing or a model's probe failed. Surface the classified message as the row's error,
+			// discarding the partial snapshot so the operator sees the failure rather than a misleadingly short list.
+			mModelLists[backend] = ModelState(backend) with
+			{
+				Snapshot = null,
+				IsFetching = false,
+				IsStreaming = false,
+				Error = ex.Message,
+				ProbeCts = null
+			};
+		}
+		finally
+		{
+			probeCts.Dispose();
+		}
+	}
+
+	/// <summary>
+	/// Cancels an in-flight streaming probe for a backend by signalling its <see cref="ModelListState.ProbeCts"/>.
+	/// The probe's <see langword="await foreach"/> observes the cancellation and settles the row to its partial
+	/// snapshot; this method only signals, leaving the disposal to the owning <see cref="StreamProbeAsync"/>.
+	/// </summary>
+	/// <param name="backend">The backend whose probe to cancel.</param>
+	private void CancelProbe(DesiredBackend backend)
+	{
+		// Cancel is best-effort: the CTS may already be gone if the stream just ended, so guard the null and swallow
+		// a race where it was disposed between the render and this click.
+		try
+		{
+			ModelState(backend).ProbeCts?.Cancel();
+		}
+		catch (ObjectDisposedException)
+		{
+			// The probe ended between rendering the Cancel button and this click; nothing left to cancel.
+		}
+	}
+
+	/// <summary>
+	/// Cancels every backend's in-flight streaming probe. Called before a reload replaces the page's load scope.
+	/// Disposing that scope does not cancel its linked probe children, so they must be signalled explicitly to stop
+	/// hitting their backends. Each probe's own <see langword="await foreach"/> then unwinds and disposes its CTS.
+	/// The dictionary snapshot makes the iteration safe against the rare case where one probe's own <see langword="finally"/>
+	/// disposes its CTS (and triggers a concurrent dictionary mutation under a future async refactor); today the
+	/// render thread is single-threaded, but the snapshot costs nothing and keeps the helper re-entrancy-safe.
+	/// </summary>
+	private void CancelInFlightProbes()
+	{
+		foreach (ModelListState state in mModelLists.Values.ToList())
+		{
+			try
+			{
+				state.ProbeCts?.Cancel();
+			}
+			catch (ObjectDisposedException)
+			{
+				// The probe finished and disposed its CTS between iterations; nothing left to cancel for it.
+			}
+		}
+	}
+
+	/// <summary>
+	/// Fetches a backend's raw model snapshot under the given probe policy and stores the result in
+	/// <see cref="mModelLists"/>, marking the entry as fetching for the duration so the card can show progress and
+	/// disable its actions. The snapshot is cached raw (not reconciled), so every later draft mutation re-reconciles
+	/// it locally without another round-trip. A cancelled fetch (circuit teardown) is dropped silently.
+	/// </summary>
+	/// <param name="backend">The backend to fetch.</param>
+	/// <param name="probePolicy">The probe policy: no-probe for a refresh, probe-all for capability enrichment.</param>
+	/// <returns>A task that completes when the fetch has finished or been cancelled.</returns>
+	private async Task FetchModelsAsync(DesiredBackend backend, DiscoveryProbePolicy probePolicy)
+	{
+		if (mDraft is null) return;
+
+		ModelListState state = ModelState(backend);
+
+		// A second fetch while one is already running would race two snapshots into the same cache slot; the buttons
+		// are disabled during a fetch, and this guard is the matching server-side defense.
+		if (state.IsFetching) return;
+
+		mModelLists[backend] = state with { IsFetching = true };
+		try
+		{
+			DraftModelSnapshot snapshot =
+				await AdminModelService.FetchDraftSnapshotAsync(backend, probePolicy, mCts!.Token);
+
+			mModelLists[backend] = snapshot.Succeeded
+				                       ? new ModelListState(snapshot.Snapshot, IsFetching: false, Error: null)
+				                       : new ModelListState(Snapshot: null, IsFetching: false, Error: snapshot.ErrorMessage);
+		}
+		catch (OperationCanceledException)
+		{
+			// The circuit was torn down mid-fetch; drop the result. The stale "fetching" flag dies with the circuit.
+		}
+	}
+
+	/// <summary>
+	/// Gets a backend's model-list state, returning a fresh empty state (no snapshot, not fetching, no error) when
+	/// the card has not been expanded yet. The empty state renders as "No models loaded yet."
+	/// </summary>
+	/// <param name="backend">The backend whose model-list state to read.</param>
+	/// <returns>The cached state, or an empty state when none has been fetched.</returns>
+	private ModelListState ModelState(DesiredBackend backend)
+	{
+		return mModelLists.TryGetValue(backend, out ModelListState? state)
+			       ? state
+			       : ModelListState.Empty;
+	}
+
+	/// <summary>
+	/// Reconciles a backend's cached snapshot against its <em>current draft</em> registry and mode, producing the
+	/// rows the table renders. This runs on every render of an expanded card, so a pin, unpin, or mode change
+	/// is reflected immediately from the cached snapshot without re-fetching. Materializing the draft backend here
+	/// (rather than reconciling against the raw <see cref="DesiredBackend.Options"/>) is unnecessary: the reconciler
+	/// only reads the prefix, mode, and registry, none of which depend on the resolved API key.
+	/// </summary>
+	/// <param name="backend">The backend whose draft to reconcile against.</param>
+	/// <param name="snapshot">The cached raw snapshot to reconcile.</param>
+	/// <returns>The reconciled rows and headline counts under the draft's current mode and registry.</returns>
+	/// <remarks>
+	/// The snapshot is sorted by client-facing name before reconciliation so the table has a stable, predictable
+	/// order. The streaming probe now <em>emits</em> its candidates in this same client-name order, so the rows
+	/// fill in top-to-bottom as each one resolves; sorting here keeps the table in that order regardless of the
+	/// snapshot's source, so the buffered refresh and a partial (mid-stream or cancelled) probe both present the
+	/// same alphabetical order. The reconciler preserves snapshot order (it never sorts, since ordering is a
+	/// presentation concern), so this is the single seam that fixes the displayed order.
+	/// </remarks>
+	private ReconciliationResult Reconcile(DesiredBackend backend, IReadOnlyList<DiscoveryCandidate> snapshot)
+	{
+		return ModelReconciler.ReconcileBackend(
+			DisplayName(backend),
+			backend.Options,
+			ProviderCatalog.ResolveMode(backend.Options),
+			[.. snapshot.OrderBy(static candidate => candidate.ClientName, StringComparer.OrdinalIgnoreCase)]);
+	}
+
+	/// <summary>
+	/// Gets the reconciliation result for a backend, or <see langword="null"/> when the backend's snapshot
+	/// has not loaded yet (so the models component can render the empty-state placeholder). Reads the
+	/// per-backend <see cref="ModelListState.Snapshot"/> directly so the call site stays allocation-light.
+	/// </summary>
+	/// <param name="backend">The backend to reconcile against.</param>
+	/// <returns>The reconciliation result, or <see langword="null"/> when no snapshot is available.</returns>
+	private ReconciliationResult? ReconciliationFor(DesiredBackend backend)
+	{
+		ModelListState state = ModelState(backend);
+		return state.Snapshot is null ? null : Reconcile(backend, state.Snapshot);
+	}
+
+	/// <summary>
+	/// Gets whether a backend's effective mode ignores registry pins, i.e. it resolves to
+	/// <see cref="OperatingMode.PlugAndPlay"/>. In that mode the table hides the pin column and the
+	/// available/unavailable counts, because every model is auto-exposed and pins have no effect.
+	/// </summary>
+	/// <param name="backend">The backend to test.</param>
+	/// <returns><see langword="true"/> when the backend's effective mode is plug-and-play.</returns>
+	private bool ModeIgnoresPins(DesiredBackend backend) => ProviderCatalog.ResolveMode(backend.Options) == OperatingMode.PlugAndPlay;
+
+	/// <summary>
+	/// Gets the set of client-facing model names a backend's draft registry registers more than once, using the
+	/// shared <see cref="BackendOptions.FindDuplicateModelNames"/> rule so the inline editor warning matches the
+	/// domain validation and Apply's dry-run exactly. The result is an <see cref="StringComparer.OrdinalIgnoreCase"/>
+	/// set so the models table's trimmed, case-insensitive membership checks resolve correctly; it is empty when
+	/// every pinned name on the backend is distinct.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry to scan for colliding client-facing names.</param>
+	/// <returns>
+	/// The duplicated names, compared case-insensitively, or an empty set when every name is unique.
+	/// </returns>
+	private IReadOnlySet<string> DuplicateModelNamesFor(DesiredBackend backend) => BackendOptions.FindDuplicateModelNames(backend.Options.Models).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Toggles a model row's pin in the draft registry: an unpinned row is pinned by appending a registry entry
+	/// that captures the discovered shape; a pinned row is unpinned by removing the matching entry. Both are pure
+	/// draft mutations (nothing is fetched or committed), so the change takes effect on disk only when the draft is
+	/// applied. The row's bare <see cref="ReconciledModel.Name"/> is the registry identity, matched
+	/// case-insensitively as the catalog does.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry to mutate.</param>
+	/// <param name="model">The reconciled row whose pin to toggle.</param>
+	private void TogglePin(DesiredBackend backend, ReconciledModel model)
+	{
+		IList<ModelRegistrationOptions> registry = backend.Options.Models;
+
+		if (model.IsPinned)
+		{
+			// Unpin: drop the registry entry whose bare name matches this row. Names are unique per backend, so this
+			// removes exactly one pin; the loop still scans defensively in case an invalid duplicate name slipped in.
+			for (int index = registry.Count - 1; index >= 0; index--)
+			{
+				if (string.Equals(registry[index].Name, model.Name, StringComparison.OrdinalIgnoreCase))
+				{
+					registry.RemoveAt(index);
+				}
+			}
+
+			// No explicit MarkDirty: the snapshot comparison in IsDirty picks up the registry change on the
+			// next render automatically.
+			return;
+		}
+
+		// Pin: append an entry capturing the discovered upstream id, capabilities, and context so the pin reproduces
+		// the backend's reported shape. A discovered row's bare Name is its upstream id, which is exactly the
+		// registry identity we store.
+		registry.Add(BuildRegistration(model));
+		// No explicit MarkDirty: see the unpin branch above.
+	}
+
+	/// <summary>
+	/// Adds another pin for the same upstream model as <paramref name="model"/>, duplicating the source pin's shape
+	/// (capabilities, explicit context override, and reasoning effort) under a fresh, unique client-facing name.
+	/// This is how an operator exposes one upstream model several times (for example to offer it at several fixed
+	/// reasoning efforts), since the runtime keys exposed models by their client-facing name and routes each to the
+	/// shared upstream id. The new entry is inserted directly after its source so it appears beside it in the table;
+	/// the operator then renames it and retunes its reasoning effort. A <see langword="null"/> source guards a stale
+	/// render where the source pin was removed between render and click.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry to mutate.</param>
+	/// <param name="model">The pinned row to clone into a new same-upstream variant.</param>
+	private void AddPinVariant(DesiredBackend backend, ReconciledModel model)
+	{
+		IList<ModelRegistrationOptions> registry = backend.Options.Models;
+
+		ModelRegistrationOptions? source = FindDraftPin(backend, model);
+		if (source is null) return;
+
+		// Capture the source's resolved upstream id explicitly so the variant requests the same upstream model
+		// regardless of the source's implicit/explicit form, then carry its overrides forward verbatim so the
+		// variant starts as a faithful copy the operator only has to rename and retune.
+		ModelRegistrationOptions variant = new()
+		{
+			Name = GenerateVariantName(registry, source.Name),
+			UpstreamModel = source.ResolveUpstreamModel(),
+			SupportsCompletion = source.SupportsCompletion,
+			SupportsTools = source.SupportsTools,
+			SupportsVision = source.SupportsVision,
+			SupportsEmbeddings = source.SupportsEmbeddings,
+			ContextLength = source.ContextLength,
+			ReasoningEffort = source.ReasoningEffort
+		};
+
+		// Insert directly after the source so the new variant lands beside it in registry (and table) order.
+		registry.Insert(registry.IndexOf(source) + 1, variant);
+
+		// No explicit MarkDirty: the snapshot comparison in IsDirty picks up the registry change on the next
+		// render automatically, exactly as TogglePin relies on.
+	}
+
+	/// <summary>
+	/// Generates a client-facing name for a new pin variant by suffixing <paramref name="baseName"/> with the
+	/// lowest <c>-N</c> (starting at <c>-2</c>) that no existing registry entry already uses, compared
+	/// case-insensitively as the catalog keys names. This keeps each same-upstream variant exposed under a distinct
+	/// name out of the box, so the operator never has to resolve a collision before the draft validates.
+	/// </summary>
+	/// <param name="registry">The backend's draft registry whose names must stay distinct.</param>
+	/// <param name="baseName">The source pin's name the variant derives from.</param>
+	/// <returns>A name not already present in <paramref name="registry"/>.</returns>
+	private static string GenerateVariantName(IEnumerable<ModelRegistrationOptions> registry, string baseName)
+	{
+		HashSet<string> taken = new(registry.Select(entry => entry.Name), StringComparer.OrdinalIgnoreCase);
+		for (int suffix = 2;; suffix++)
+		{
+			string candidate = $"{baseName}-{suffix}";
+			if (!taken.Contains(candidate)) return candidate;
+		}
+	}
+
+	/// <summary>
+	/// Resolves the draft registry entry backing a reconciled pin row, matched by its bare
+	/// <see cref="ReconciledModel.Name"/> against <see cref="ModelRegistrationOptions.Name"/> (compared
+	/// case-insensitively, exactly as the catalog keys client-facing names). The bare name, not the upstream id,
+	/// is the match key because several pins may deliberately share one upstream id (the same upstream model exposed
+	/// under distinct client names, each with its own fixed reasoning effort or overrides), so the upstream id no
+	/// longer identifies a single entry; the bare name is the pin's unique per-backend identity. The lookup uses the
+	/// row's current (pre-edit) name and every edit re-reconciles, so a row whose name was just edited still resolves
+	/// to its own entry on the next render.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry holds the pin.</param>
+	/// <param name="model">The reconciled pin row to resolve.</param>
+	/// <returns>
+	/// The matching registry entry, or <see langword="null"/> when no pin matches, e.g. a stale render where the
+	/// entry was removed between render and click, or a row that is not a pin.
+	/// </returns>
+	private static ModelRegistrationOptions? FindDraftPin(DesiredBackend backend, ReconciledModel model) => backend.Options.Models.FirstOrDefault(pin => string.Equals(pin.Name, model.Name, StringComparison.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// Writes a pinned model's edited client-facing name back to its draft registry entry. Before applying the new
+	/// name it pins the entry's <see cref="ModelRegistrationOptions.UpstreamModel"/> to the model's current upstream
+	/// id, so renaming only ever changes what clients see, never which upstream model the pin requests. This guard
+	/// matters when the entry had an <em>implicit</em> upstream id (a null <c>UpstreamModel</c> resolving to the old
+	/// <c>Name</c>): without it, editing the name would silently retarget the backend request and break the
+	/// reconciler's upstream-id match. A blank input is ignored (the name stays unchanged) because an empty
+	/// client-facing name is invalid and would orphan the row's identity. The <see langword="null"/> guard covers a
+	/// stale render where the pin was removed between render and click.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry holds the pin.</param>
+	/// <param name="model">The pinned row whose client-facing name is being edited.</param>
+	/// <param name="value">The raw field value, possibly <see langword="null"/>, blank, or padded.</param>
+	private static void SetPinnedName(DesiredBackend backend, ReconciledModel model, string? value)
+	{
+		ModelRegistrationOptions? entry = FindDraftPin(backend, model);
+		if (entry is null) return;
+
+		// Reject a blank name rather than orphan the entry's identity; the field simply keeps its prior value.
+		if (string.IsNullOrWhiteSpace(value)) return;
+
+		// Pin the upstream id before renaming so an implicit UpstreamModel (which resolves to the old Name) does not
+		// silently follow the new name and retarget the backend request. Idempotent when the id was already explicit.
+		entry.UpstreamModel = model.UpstreamModel;
+		entry.Name = value.Trim();
+	}
+
+	/// <summary>
+	/// Gets a pinned model's <em>explicit</em> context-length override for the editor field, or
+	/// <see langword="null"/> when the pin carries none. This deliberately returns only the entry's own
+	/// <see cref="ModelRegistrationOptions.ContextLength"/>, not the effective window the reconciler resolves,
+	/// so an empty field means "inherit the backend's reported value or default" while a populated field means "an
+	/// explicit override is set". Returns <see langword="null"/> for a stale render where the pin no longer exists.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry holds the pin.</param>
+	/// <param name="model">The pinned row whose context override is being edited.</param>
+	/// <returns>The explicit override in tokens, or <see langword="null"/> when the pin inherits its window.</returns>
+	private static int? GetContextOverride(DesiredBackend backend, ReconciledModel model) => FindDraftPin(backend, model)?.ContextLength;
+
+	/// <summary>
+	/// Writes a pinned model's edited context-length override back to its draft registry entry. An empty or
+	/// non-positive input clears the override (<see langword="null"/>), so the pin falls back to the backend's
+	/// reported window or default through the shared three-tier rule; a positive input sets an explicit override
+	/// that wins over both. The value is normalized through <see cref="ToRegistrationContextLength"/>, which guards
+	/// the <see cref="long"/>-to-<see cref="int"/> narrowing. The <see langword="null"/> guard covers a stale render
+	/// where the pin was removed between render and click.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry holds the pin.</param>
+	/// <param name="model">The pinned row whose context override is being edited.</param>
+	/// <param name="value">The raw field value in tokens, or <see langword="null"/> when cleared.</param>
+	private static void SetContextOverride(DesiredBackend backend, ReconciledModel model, int? value)
+	{
+		ModelRegistrationOptions? entry = FindDraftPin(backend, model);
+		if (entry is null) return;
+
+		entry.ContextLength = ToRegistrationContextLength(value);
+	}
+
+	/// <summary>
+	/// Gets a pinned model's <em>explicit</em> reasoning-effort override for the selector, or
+	/// <see langword="null"/> when the pin carries none (the blank "Inherit" option). A pinned effort is
+	/// authoritative (it overrides both the inbound <c>think</c> directive and the backend default), so a set
+	/// value is the deliberate way to fix the model to a known-safe level; <see langword="null"/> leaves the
+	/// normal resolution chain (request <c>think</c>, then backend default, then none). Returns
+	/// <see langword="null"/> for a stale render where the pin no longer exists.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry holds the pin.</param>
+	/// <param name="model">The pinned row whose reasoning override is being edited.</param>
+	/// <returns>The pinned reasoning effort, or <see langword="null"/> when the pin inherits it.</returns>
+	private static ReasoningEffort? GetPinnedReasoning(DesiredBackend backend, ReconciledModel model) => FindDraftPin(backend, model)?.ReasoningEffort;
+
+	/// <summary>
+	/// Writes a pinned model's edited reasoning-effort override back to its draft registry entry. A
+	/// <see langword="null"/> value (the blank "Inherit" option) clears the override so the pin rejoins the normal
+	/// resolution chain; a concrete level pins reasoning authoritatively, winning over the inbound <c>think</c>
+	/// directive and the backend default. The <see langword="null"/> guard covers a stale render where the pin was
+	/// removed between render and change.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry holds the pin.</param>
+	/// <param name="model">The pinned row whose reasoning override is being edited.</param>
+	/// <param name="value">The selected effort, or <see langword="null"/> when cleared to inherit.</param>
+	private static void SetPinnedReasoning(DesiredBackend backend, ReconciledModel model, ReasoningEffort? value)
+	{
+		ModelRegistrationOptions? entry = FindDraftPin(backend, model);
+		if (entry is null) return;
+
+		entry.ReasoningEffort = value;
+	}
+
+	/// <summary>
+	/// Writes one of a pinned model's edited capability flags back to its draft registry entry as an
+	/// <em>explicit</em> value.
+	/// <see langword="true"/>/<see langword="false"/> (never back to <see langword="null"/>), so once the operator
+	/// touches a capability it is configured explicitly rather than left to the registry's defaults. An invalid
+	/// combination (clearing completion without embeddings) is not blocked here; it is surfaced by
+	/// <see cref="ModelRegistrationOptions.Validate"/> on the Apply dry-run, consistent with how the editor defers
+	/// other domain rules. The <see langword="null"/> guard covers a stale render where the pin was removed between
+	/// render and click.
+	/// </summary>
+	/// <param name="backend">The backend whose draft registry holds the pin.</param>
+	/// <param name="model">The pinned row whose capability is being edited.</param>
+	/// <param name="capability">Which capability flag to write.</param>
+	/// <param name="value">The new flag value from the checkbox.</param>
+	private static void SetPinnedCapability(
+		DesiredBackend   backend,
+		ReconciledModel  model,
+		PinnedCapability capability,
+		bool             value)
+	{
+		ModelRegistrationOptions? entry = FindDraftPin(backend, model);
+		if (entry is null) return;
+
+		switch (capability)
+		{
+			case PinnedCapability.Completion: entry.SupportsCompletion = value; break;
+			case PinnedCapability.Tools:      entry.SupportsTools = value; break;
+			case PinnedCapability.Vision:     entry.SupportsVision = value; break;
+			case PinnedCapability.Embeddings: entry.SupportsEmbeddings = value; break;
+			// All PinnedCapability values are handled above.
+			default: throw new UnreachableException($"Unhandled capability '{capability}'.");
+		}
+	}
+
+	/// <summary>
+	/// Builds a draft registry entry from a discovered model row, freezing the discovered shape so the pin fixes
+	/// exactly what the operator found: its upstream id, its capabilities, and its reported context window. Pinning
+	/// is "pin what was discovered", so the discovered context window (<see cref="ReconciledModel.ContextLength"/>,
+	/// the backend's raw reported value for a discovered row) is captured as an explicit
+	/// <see cref="ModelRegistrationOptions.ContextLength"/> rather than left <see langword="null"/>. Otherwise the
+	/// pin would inherit through the resolution chain and, when the reported value didn't apply, fall back to the
+	/// backend default, which is never what the operator intended when pinning a concrete model. Capturing it also
+	/// means a later change in the backend's reported window surfaces as context drift the operator can act on. The
+	/// context is left <see langword="null"/> only when discovery resolved no window at all (a probe-skipped row),
+	/// since there is nothing to freeze. When the row carried no capabilities the flags are likewise left unset, so
+	/// the registry applies its conservative defaults (completion only) on commit.
+	/// </summary>
+	/// <param name="model">The discovered row to pin.</param>
+	/// <returns>The configured registry entry.</returns>
+	private static ModelRegistrationOptions BuildRegistration(ReconciledModel model)
+	{
+		ModelRegistrationOptions registration = new()
+		{
+			Name = model.Name,
+			UpstreamModel = model.UpstreamModel,
+			// Freeze the discovered window as an explicit override; null only when discovery resolved no window.
+			ContextLength = ToRegistrationContextLength(model.ContextLength)
+		};
+
+		// Capture the discovered capabilities verbatim so the pin does not silently downgrade a tool- or
+		// vision-capable model to the registry's completion-only default. When capabilities are undetermined the
+		// flags stay null and the registry resolves its defaults on commit.
+		if (model.Capabilities is { } capabilities)
+		{
+			registration.SupportsCompletion = capabilities.SupportsCompletion;
+			registration.SupportsTools = capabilities.SupportsTools;
+			registration.SupportsVision = capabilities.SupportsVision;
+			registration.SupportsEmbeddings = capabilities.SupportsEmbeddings;
+		}
+
+		return registration;
+	}
+
+	/// <summary>
+	/// Converts a discovered context window to the registry's <see cref="int"/>-typed field. A non-positive value
+	/// is treated as unresolved (<see langword="null"/>) and an out-of-range value is clamped to
+	/// <see cref="int.MaxValue"/>; neither is expected for a real token count, but both guard the
+	/// <see cref="long"/>-to-<see cref="int"/> narrowing against producing an invalid registry entry.
+	/// </summary>
+	/// <param name="contextLength">The discovered context window, or <see langword="null"/> when none was resolved.</param>
+	/// <returns>The context window as an <see cref="int"/>, or <see langword="null"/> when unresolved.</returns>
+	private static int? ToRegistrationContextLength(long? contextLength) => contextLength switch
+	{
+		null or <= 0   => null,
+		> int.MaxValue => int.MaxValue,
+		{ } value      => (int)value
+	};
+
+	/// <summary>
+	/// Cancels any in-flight load or apply when the component's circuit is torn down so it cannot run past the
+	/// page, and signals every streaming probe the same way. The probes are linked to <see cref="mCts"/> through
+	/// <see cref="CancellationTokenSource.CreateLinkedTokenSource(CancellationToken)"/>, so cancelling the page
+	/// scope propagates to them: the per-probe <see langword="await foreach"/> observes the cancellation and its
+	/// <see langword="finally"/> disposes its own CTS. We still call <see cref="CancelInFlightProbes"/> first so
+	/// the explicit "signal every probe" intent is visible at the call site and a future refactor that detaches a
+	/// probe from <see cref="mCts"/> (or disposes <see cref="mCts"/> before the linked children observe it) cannot
+	/// leave an orphaned probe running past the page's lifetime. The JS dirty-guard module, the Ctrl+Enter commit
+	/// shortcut module, and the in-app location-changing handler are torn down alongside so none holds onto a
+	/// callback that fires after the page has gone.
+	/// </summary>
+	public async ValueTask DisposeAsync()
+	{
+		// Tear the JS guard down first so any subsequent re-render on a recycled circuit cannot reach a stale
+		// module reference. Awaiting the detach avoids racing a later page instance that imports the same module in
+		// the browser tab.
+		if (mDirtyModule is not null)
+		{
+			try
+			{
+				await mDirtyModule.InvokeVoidAsync("detach").ConfigureAwait(true);
+				await mDirtyModule.DisposeAsync().ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// The circuit is already gone; the listener cannot fire from a torn-down circuit.
+			}
+			catch (JSException)
+			{
+				// The module was already detached or its state is otherwise unreachable; nothing to do.
+			}
+			mDirtyModule = null;
+		}
+
+		// Tear the Ctrl+Enter shortcut down on the same terms as the dirty guard: detach the listener so it cannot
+		// fire on a recycled circuit, then dispose the module. The DotNetObjectReference is disposed unconditionally
+		// below, even if the module never loaded (an early circuit teardown), so the interop handle is never leaked.
+		if (mCommitShortcutModule is not null)
+		{
+			try
+			{
+				await mCommitShortcutModule.InvokeVoidAsync("detach").ConfigureAwait(true);
+				await mCommitShortcutModule.DisposeAsync().ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// The circuit is already gone; the listener cannot fire from a torn-down circuit.
+			}
+			catch (JSException)
+			{
+				// The module was already detached or its state is otherwise unreachable; nothing to do.
+			}
+			mCommitShortcutModule = null;
+		}
+
+		mCommitShortcutRef?.Dispose();
+		mCommitShortcutRef = null;
+
+		// Deregister the in-app navigation handler so a stale registration cannot intercept a future page's
+		// route change (the registration is scoped to the disposed component, but disposing it explicitly is the
+		// documented contract).
+		mLocationChangingRegistration?.Dispose();
+		mLocationChangingRegistration = null;
+
+		// Signal the probes explicitly first: cancelling mCts propagates to linked children today, but ordering
+		// the two steps makes the lifetime contract obvious and keeps us correct if the linkage ever changes.
+		CancelInFlightProbes();
+		if (mCts != null) await mCts.CancelAsync();
+		mCts?.Dispose();
+
+		// Dispose the JS-push serializer last so any in-flight push triggered by the cancellation above finishes
+		// its await before we tear the semaphore down.
+		mDirtyPushLock.Dispose();
+	}
+
+	/// <summary>
+	/// Generates a backend name that is unique within the current draft (compared case-insensitively), starting
+	/// from a base name and appending an incrementing suffix on collision.
+	/// </summary>
+	/// <returns>A name not yet used by any backend in the draft.</returns>
+	private string GenerateBackendName()
+	{
+		const string baseName = "new-backend";
+		if (mDraft is null || !NameExists(baseName))
+		{
+			return baseName;
+		}
+
+		// The candidate space is unbounded, so a unique name is always found and the loop cannot spin forever.
+		for (int suffix = 2;; suffix++)
+		{
+			string candidate = $"{baseName}-{suffix}";
+			if (!NameExists(candidate))
+			{
+				return candidate;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Gets whether any backend in the draft already uses the given name, compared case-insensitively to match the
+	/// routing layer's keying.
+	/// </summary>
+	/// <param name="name">The candidate name to test.</param>
+	/// <returns><see langword="true"/> when a backend with that name already exists.</returns>
+	private bool NameExists(string name) => mDraft!.Backends.Any(backend => string.Equals(backend.Name, name, StringComparison.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// Gets a backend's display name for the card header, falling back to a placeholder when the operator has not
+	/// named it yet (a newly added backend the operator cleared, or a blank name being typed).
+	/// </summary>
+	/// <param name="backend">The backend to label.</param>
+	/// <returns>The backend's name, or a placeholder when it is blank.</returns>
+	private static string DisplayName(DesiredBackend backend) => string.IsNullOrWhiteSpace(backend.Name) ? "(unnamed backend)" : backend.Name;
+
+	/// <summary>
+	/// The serializer options used to fingerprint and compare drafts. Compact output (no indentation) keeps the
+	/// comparison cheap; deterministic property naming and case-insensitive dictionary-key comparison handle the
+	/// one non-deterministic input (the <see cref="DesiredProxyState.Backends"/> map's key ordering between loads
+	/// and current drafts).
+	/// </summary>
+	private static readonly JsonSerializerOptions SnapshotOptions = new()
+	{
+		WriteIndented = false,
+		IncludeFields = false
+	};
+
+	/// <summary>
+	/// Gets whether the draft differs from the snapshot <see cref="LoadAsync"/> captured. The check is on-demand
+	/// and <em>uncached</em>: every read re-serializes the current draft and compares it to the loaded
+	/// fingerprint. A previous attempt cached the result for the duration of a single render, but that turned
+	/// out to be wrong: Blazor's render pipeline reads this property during <c>BuildRenderTree</c> (which runs
+	/// <em>before</em> <see cref="OnAfterRenderAsync"/>, where the cache would have been invalidated), so a
+	/// mutation that flipped the cache's previous value was missed by the markup and the banner stayed hidden
+	/// until the next render. Re-deriving on every read trades a few milliseconds of JSON work per render for
+	/// the certainty that the markup always sees the live truth, and at the operator-typing scale this is
+	/// negligible. A draft that has not yet loaded reports <see langword="false"/> so we never nag the operator
+	/// before they have seen a configuration to edit.
+	/// </summary>
+	private bool IsDirty
+	{
+		get
+		{
+			if (mLoadedSnapshotJson is null || mDraft is null) return false;
+
+			string currentJson = SerializeSnapshot(mDraft);
+			return !string.Equals(currentJson, mLoadedSnapshotJson, StringComparison.Ordinal);
+		}
+	}
+
+	/// <summary>
+	/// Serializes a draft to its deterministic JSON snapshot for fingerprinting and comparison. The serializer
+	/// is allocated once and shared (see <see cref="SnapshotOptions"/>); the <see cref="DesiredProxyState"/>
+	/// graph it walks includes the backends list and the request-tracing block, both of which are public POCOs
+	/// whose public property surface is the complete edit surface, so any field a future commit changes will
+	/// surface as a snapshot diff with no code change here. The backends list is sorted by name (case-insensitive)
+	/// before serializing so add-then-remove-then-readd permutations, which rearrange the underlying
+	/// <see cref="List{T}"/> without changing its semantic content, still produce a snapshot equal to the
+	/// pre-edit baseline. Without the sort, a non-semantic reordering would falsely flag the draft as dirty.
+	/// </summary>
+	/// <param name="draft">The draft to fingerprint.</param>
+	/// <returns>The deterministic JSON string used as the dirty-comparison fingerprint.</returns>
+	private static string SerializeSnapshot(DesiredProxyState draft)
+	{
+		// Project the draft into a comparison-only shape with a stable order. We allocate a fresh list rather
+		// than mutating the draft's list: two-way bindings are reading the draft, and any reordering here would
+		// silently shuffle the editor's card list on the next render.
+		DesiredProxyState ordered = new()
+		{
+			Backends =
+			[
+				.. draft.Backends.OrderBy(
+					static b => b.Name,
+					StringComparer.OrdinalIgnoreCase)
+			],
+			RequestTracing = draft.RequestTracing
+		};
+		return JsonSerializer.Serialize(ordered, SnapshotOptions);
+	}
+
+	/// <summary>
+	/// Captures the current draft as the new clean baseline and pushes <see langword="false"/> to the JS
+	/// <see langword="beforeunload"/> guard. Called once a successful apply has run (or a fresh load has
+	/// completed), so the draft reflects exactly what is live on disk and a subsequent close or tab switch
+	/// needs no confirmation. The JS push is best-effort: a torn-down circuit means the listener is gone too,
+	/// so any error from the module call is swallowed.
+	/// </summary>
+	private async Task MarkCleanAsync()
+	{
+		mLoadedSnapshotJson = mDraft is not null ? SerializeSnapshot(mDraft) : null;
+		await PushDirtyStateAsync(false).ConfigureAwait(true);
+	}
+
+	/// <summary>
+	/// Pushes the current dirty status to the JS dirty-guard module through <see cref="mDirtyPushLock"/> so
+	/// concurrent callers cannot let an older push land after a newer one. The module reference is captured at
+	/// call time, so a freshly-imported module on the next page (after a refresh that re-created the circuit)
+	/// is not racing a stale one: every push uses whatever the field points to right now. Errors from a
+	/// torn-down circuit or a stale module are swallowed: the next render will re-derive and re-push.
+	/// </summary>
+	/// <param name="isDirty">The dirty status to push to the browser.</param>
+	private async Task PushDirtyStateAsync(bool isDirty)
+	{
+		if (mDirtyModule is null)
+		{
+			// The module is not loaded yet (firstRender is still in flight, or the load failed). The next render
+			// will retry once the module is online.
+			return;
+		}
+
+		// Serialize pushes: a streaming probe's StateHasChanged can re-enter OnAfterRenderAsync before the
+		// in-flight await returns, and an older "clean" push landing after a newer "dirty" push would tell the
+		// browser the page is clean when it is not.
+		IJSObjectReference module = mDirtyModule;
+		await mDirtyPushLock.WaitAsync().ConfigureAwait(true);
+		try
+		{
+			await module.InvokeVoidAsync("setDirty", isDirty).ConfigureAwait(true);
+		}
+		catch (JSDisconnectedException)
+		{
+			// The circuit was torn down between the render and the push; the page is gone.
+		}
+		catch (JSException)
+		{
+			// The module reference is stale (the page may have just been refreshed without our Dispose
+			// running). The next render will re-derive from IsDirty and re-push.
+		}
+		finally
+		{
+			mDirtyPushLock.Release();
+		}
+	}
+
+	/// <summary>
+	/// Normalizes and stores a model-prefix edit on the draft, coercing a blank input to <see langword="null"/> so
+	/// clearing the field means "no prefix" rather than the present-but-blank value that
+	/// <see cref="BackendOptions.Validate"/> rejects. A non-blank value is stored trimmed.
+	/// </summary>
+	/// <param name="backend">The backend whose draft prefix to set.</param>
+	/// <param name="value">The raw field value, possibly <see langword="null"/>, blank, or padded.</param>
+	private static void SetModelPrefix(DesiredBackend backend, string? value) => backend.Options.ModelPrefix = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+	/// <summary>
+	/// Updates the provider type on the backend and pre-fills the base URL with the provider's canonical
+	/// default when the current URL is blank or still matches the previous provider's default, so a
+	/// manually-entered URL is never overwritten, but a pristine or default-prefilled field follows the
+	/// new selection automatically. The dirty state is observed by the snapshot comparison in
+	/// <see cref="IsDirty"/>, so this method needs no explicit dirty-tracking call.
+	/// </summary>
+	/// <param name="backend">The backend whose provider type is being changed.</param>
+	/// <param name="newProviderType">The newly selected provider-type discriminator.</param>
+	private void SetProviderType(DesiredBackend backend, string? newProviderType)
+	{
+		string previousDefault = ProviderCatalog.DefaultBaseUrlFor(backend.Options.ProviderType);
+		string currentUrl = backend.Options.BaseUrl;
+
+		backend.Options.ProviderType = newProviderType ?? BackendOptions.DefaultProviderType;
+
+		// Only overwrite the URL when it is blank or still holds the previous provider's default, so a
+		// manually-entered address is never clobbered by a provider-type change.
+		if (string.IsNullOrWhiteSpace(currentUrl) || currentUrl == previousDefault)
+		{
+			backend.Options.BaseUrl = ProviderCatalog.DefaultBaseUrlFor(backend.Options.ProviderType);
+		}
+	}
+
+}

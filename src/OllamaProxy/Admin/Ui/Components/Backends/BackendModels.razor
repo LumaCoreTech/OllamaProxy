@@ -1,0 +1,790 @@
+@using System.Diagnostics
+@using System.Globalization
+@using OllamaProxy.Admin.Reconciliation
+@using OllamaProxy.Configuration
+@using OllamaProxy.Providers.Abstractions
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@* Combined model list for one backend: the header with Refresh and Probe buttons, the mode-ignores-pins
+   notice (when relevant), the streaming-progress banner with Cancel, the error/empty/loaded rendering
+   branches, and the rendered reconciliation table (pinned rows as joined pairs of head + override rows;
+   discovered rows as a single read-only row; optional per-row detail panel underneath). The component is
+   presentational: the page owns <see cref="Reconcile"/>, the fetch/probe lifecycle, and every setter that
+   mutates the draft. *@
+<div class="backend-models">
+<div class="backend-models-header">
+	<span class="backend-models-title">Models</span>
+	<div class="backend-models-actions">
+		<button type="button"
+		        class="backend-model-action"
+		        @onclick="OnRefreshModels"
+		        disabled="@(IsBusy || State.IsFetching)">
+			@(State is { IsFetching: true, IsStreaming: false } ? "Fetching…" : "Refresh")
+		</button>
+		<button type="button"
+		        class="backend-model-action"
+		        @onclick="OnProbeModels"
+		        disabled="@(IsBusy || State.IsFetching)">
+			@(State.IsStreaming ? "Probing…" : "Probe capabilities")
+		</button>
+	</div>
+</div>
+
+@if (ModeIgnoresPins)
+{
+	<p class="backend-mode-note">
+		Plug-and-play exposes every discovered model automatically; registry pins are ignored in this
+		mode, so the list below mirrors exactly what the proxy would serve. Any saved pins are kept but
+		have no effect here.
+	</p>
+}
+
+@* A streaming probe fills the table model-by-model; this banner reports the running count and
+		 offers a Cancel so a slow backend's scan never traps the operator. It sits above the table so
+		 the rows it is populating render directly beneath it as they arrive. *@
+@if (State.IsStreaming)
+{
+	<div class="backend-probe-progress" role="status" aria-live="polite">
+		<span class="backend-probe-spinner" aria-hidden="true"></span>
+		<span class="backend-probe-progress-text">
+			Probing capabilities… @State.ProbedCount.ToString("N0", CultureInfo.InvariantCulture) resolved
+		</span>
+		<button type="button"
+		        class="backend-model-action backend-probe-cancel"
+		        @onclick="OnCancelProbe"
+		        disabled="@IsBusy">
+			Cancel
+		</button>
+	</div>
+}
+
+@if (State.Error is { } error)
+{
+	<p class="backend-error">@error</p>
+}
+else if (State.Snapshot is null)
+{
+	@* While a streaming probe is running with no rows yet, the banner above already explains what is
+		   happening, so the placeholder would be redundant: suppress it until the first row arrives. *@
+	@if (!State.IsStreaming)
+	{
+		<p class="backend-empty">
+			@(State.IsFetching ? "Fetching models…" : "No models loaded yet.")
+		</p>
+	}
+}
+else
+{
+	@if (Reconciliation is null || Reconciliation.Models.Count == 0)
+	{
+		<p class="backend-empty">This backend reports no models.</p>
+	}
+	else
+	{
+		<div class="backend-counts">
+			@if (!ModeIgnoresPins)
+			{
+				<span>@Reconciliation.AvailableCount available</span>
+				<span>@Reconciliation.UnavailableCount unavailable</span>
+			}
+			<span>@Reconciliation.DiscoveredCount discovered</span>
+			@if (Reconciliation.DriftCount > 0)
+			{
+				<span class="backend-count-drift">@Reconciliation.DriftCount drifted</span>
+			}
+		</div>
+
+		<div class="backend-table-scroll">
+		<table class="backend-table">
+		<caption class="backend-table-caption visually-hidden">Models for @Backend.Name</caption>
+		@* Colgroup declares one <col> per rendered column. The table uses table-layout: auto
+				   (see .backend-table), so every column except the pin column sizes to its widest cell;
+				   only .col-pin carries an explicit width (3.5rem) to keep the checkbox column stable.
+				   The remaining col-* classes have no width rule today; they exist purely as named hooks
+				   so a future column-width tweak has a place to land without touching every <td>. The col
+				   count must match the rendered <thead> exactly: 6 columns when pins are visible, 5 when
+				   they are not. *@
+		<colgroup>
+			@if (!ModeIgnoresPins)
+			{
+				<col class="col-pin"/>
+			}
+			<col class="col-model"/>
+			<col class="col-exposed"/>
+			<col class="col-state"/>
+			<col class="col-caps"/>
+			<col class="col-context"/>
+		</colgroup>
+		<thead>
+		<tr>
+			@if (!ModeIgnoresPins)
+			{
+				<th scope="col" class="pin-column">Pinned</th>
+			}
+			<th scope="col">Model</th>
+			<th scope="col">Exposed as</th>
+			<th scope="col">State</th>
+			<th scope="col">Capabilities</th>
+			<th scope="col">Context</th>
+		</tr>
+		</thead>
+		<tbody>
+		@* Rows are keyed by position (rowIndex), not by model.Name: a pinned row's client-facing name is
+				   editable and two pins may transiently share the same name mid-edit (the duplicate is flagged, not
+				   prevented). A name-derived @key would then collide and throw inside the renderer before the operator
+				   could correct it, so the stable, always-unique row position carries the key instead. *@
+		@for (int rowIndex = 0; rowIndex < Reconciliation!.Models.Count; rowIndex++)
+		{
+			ReconciledModel model = Reconciliation.Models[rowIndex];
+			bool pinAware = !ModeIgnoresPins;
+			string detailPanelId = GetModelDetailPanelId(rowIndex);
+
+			// The detail expander appears only when the backend actually reported descriptive metadata
+			// for this model; the colspan must cover every column so the panel spans the full table.
+			bool hasDetails = model.Metadata is { HasAny: true };
+			bool detailsOpen = hasDetails && IsDetailsExpanded(model);
+			int columnCount = pinAware ? 6 : 5;
+
+			// The detail panel starts under the model-name column, leaving the pin checkbox column as an
+			// uninterrupted gutter: a leading empty pin cell holds that column, and the panel cell spans
+			// every remaining column up to the table's right edge.
+			int detailColspan = pinAware ? columnCount - 1 : columnCount;
+
+			if (pinAware && model.IsPinned)
+			{
+				@* A pinned model renders as a joined pair of rows that share one pin identity: the pin
+							 checkbox and upstream id span both rows. Each remaining column stacks two fields, the head
+							 row above the override row. Capabilities and context are reported-above-editable pairs:
+							 the head shows the backend's reported values (disabled) and the override row the editable
+							 fields directly beneath, so an empty override inherits the greyed value above it. The
+							 third column instead stacks the two pin-only fields that have no reported counterpart:
+							 the client-facing name on top and the authoritative reasoning effort below. The override
+							 row is tinted to set its editable overrides apart from the reported values above it. *@
+				bool prefixed = !string.IsNullOrWhiteSpace(Backend.Options.ModelPrefix);
+
+				// Early, non-blocking feedback: a name that collides with another entry on this backend is
+				// marked invalid inline so the operator sees the clash while typing. Apply still runs the
+				// authoritative duplicate check via the dry-run; this only surfaces it sooner.
+				bool isDuplicateName = IsDuplicateName(model);
+
+				<tr @key='$"{rowIndex}#head"' class="model-pin-head @(detailsOpen ? "model-row-details-open" : null)">
+					<td class="pin-column model-span" rowspan="2">
+						<input type="checkbox"
+						       aria-label="Unpin @model.UpstreamModel"
+						       checked="@model.IsPinned"
+						       @onchange="() => OnTogglePin.InvokeAsync(model)"
+						       disabled="@IsBusy"/>
+					</td>
+					<th scope="row" class="model-span" rowspan="2">
+						<span class="model-upstream">@model.UpstreamModel</span>
+						@if (hasDetails)
+						{
+							<button type="button"
+							        class="model-details-toggle"
+							        @onclick="() => OnToggleModelDetails.InvokeAsync(model)"
+							        aria-expanded="@(detailsOpen.ToString().ToLowerInvariant())"
+							        aria-controls="@detailPanelId"
+							        aria-label="@(detailsOpen ? "Hide model details" : "Show model details")">
+								@(detailsOpen ? "▾" : "▸")
+							</button>
+						}
+						@* Expose this same upstream model again under a new name: clones the pin so the operator can
+									 offer it at a second fixed reasoning effort (or other override). Shares the upstream-id cell
+									 because the new variant targets exactly this upstream model. *@
+						<button type="button"
+						        class="model-add-variant"
+						        @onclick="() => OnAddVariant.InvokeAsync(model)"
+						        disabled="@IsBusy"
+						        title="Add another variant of this model under a new name — for example to offer it at a second fixed reasoning effort.">
+							+ variant
+						</button>
+					</th>
+					<td>
+						<div class="model-name-edit">
+							@if (prefixed)
+							{
+								@* The backend's prefix is fixed and applied at exposure; only the bare name after
+											 it is editable, so it is shown as a read-only affix rather than hidden. *@
+								<span class="model-name-prefix">@(Backend.Options.ModelPrefix)/</span>
+							}
+							<input type="text"
+							       class="model-name-input @(isDuplicateName ? "model-name-input-invalid" : null)"
+							       aria-label="Client-facing model name"
+							       aria-invalid="@(isDuplicateName ? "true" : null)"
+							       @bind:get="model.Name"
+							       @bind:set="value => OnSetPinnedName.InvokeAsync(new PinnedNameEdit(model, value))"
+							       disabled="@IsBusy"/>
+						</div>
+						@if (isDuplicateName)
+						{
+							@* Mirrors BackendOptions.Validate's duplicate-name rule so the operator sees the clash
+										 inline; the wording is shorter than the validation message because the offending row is
+										 already highlighted, making the "which name" context implicit. *@
+							<p class="model-name-duplicate" role="alert">
+								Duplicate name — each model on this backend must be exposed under a distinct name.
+							</p>
+						}
+					</td>
+					<td>
+						<ModelStateBadge State="model.State" Mode="Backend.Options.Mode"/>
+					</td>
+					@if (model.State == ReconciledModelState.Unavailable)
+					{
+						@* An unavailable pin has nothing to report (the backend stopped advertising the
+									 model), so the two reported facets collapse into one note rather than empty
+									 disabled controls that would read like "supports nothing, context zero". *@
+						<td colspan="2" class="model-unavailable-note">
+							Backend no longer reports this model.
+						</td>
+					}
+					else
+					{
+						<td>
+							@if (model.DiscoveredCapabilities is { } reportedCaps)
+							{
+								<div class="model-caps-edit">
+									<label class="backend-check">
+										<input type="checkbox" checked="@reportedCaps.SupportsCompletion" disabled/>
+										completion
+									</label>
+									<label class="backend-check">
+										<input type="checkbox" checked="@reportedCaps.SupportsTools" disabled/>
+										tools
+									</label>
+									<label class="backend-check">
+										<input type="checkbox" checked="@reportedCaps.SupportsVision" disabled/>
+										vision
+									</label>
+									<label class="backend-check">
+										<input type="checkbox" checked="@reportedCaps.SupportsEmbeddings" disabled/>
+										embeddings
+									</label>
+								</div>
+							}
+							else
+							{
+								@* A probe-skipped discovery left capabilities undetermined: show a placeholder
+											 rather than four unchecked boxes that would falsely read as "supports nothing". *@
+								<span class="model-reported-none">—</span>
+							}
+						</td>
+						<td>
+							@if (model.DiscoveredContextLength is { } reportedContext)
+							{
+								<input type="number"
+								       class="model-context-input"
+								       value="@reportedContext"
+								       aria-label="Reported context window in tokens"
+								       disabled/>
+							}
+							else
+							{
+								<span class="model-reported-none">—</span>
+							}
+						</td>
+					}
+				</tr>
+
+				<tr @key='$"{rowIndex}#override"' class="model-pin-overrides @(model.IsDrifted ? "row-drift" : null) @(detailsOpen ? "model-row-details-open" : null)">
+					@* Override tray: the editable capability and context fields sit directly under the reported
+									   values they override, tinted so they read as one editable unit. The first cell holds
+									   the reasoning selector instead, stacked below the editable name input above it: the
+									   two pin-only fields, which have no reported value to sit beneath. *@
+					<td>
+						<label class="model-reasoning-edit">
+							<span class="model-field-caption">Reasoning</span>
+							<select class="model-reasoning-select"
+							        @bind:get="GetPinnedReasoning(model)"
+							        @bind:set="value => OnSetPinnedReasoning.InvokeAsync(new PinnedReasoningEdit(model, value))"
+							        disabled="@IsBusy">
+								<option value="">Inherit</option>
+								@foreach (ReasoningEffort effort in ReasoningEffortOptions)
+								{
+									<option value="@effort">@ReasoningEffortLabel(effort)</option>
+								}
+							</select>
+						</label>
+					</td>
+					<td>
+						@if (model.IsDrifted)
+						{
+							@* The shared Badge primitive owns the pill shape and palette; this call only
+										   picks the amber Warning variant and attaches the drift tooltip. No extra class
+										   is passed: the badge is the cell's only content and the cell's own padding
+										   spaces it, and a class here would land in Badge's scope (not this one) while
+										   also overriding the primitive's own class attribute. *@
+							<Badge Variant="BadgeVariant.Warning" title="@DriftSummary(model)">Drifted</Badge>
+						}
+					</td>
+					<td>
+						<div class="model-caps-edit">
+							<label class="backend-check">
+								<input type="checkbox"
+								       @bind:get="model.Capabilities?.SupportsCompletion ?? false"
+								       @bind:set="value => OnSetPinnedCapability.InvokeAsync(new PinnedCapabilityEdit(model, PinnedCapability.Completion, value))"
+								       disabled="@IsBusy"/>
+								completion
+							</label>
+							<label class="backend-check">
+								<input type="checkbox"
+								       @bind:get="model.Capabilities?.SupportsTools ?? false"
+								       @bind:set="value => OnSetPinnedCapability.InvokeAsync(new PinnedCapabilityEdit(model, PinnedCapability.Tools, value))"
+								       disabled="@IsBusy"/>
+								tools
+							</label>
+							<label class="backend-check">
+								<input type="checkbox"
+								       @bind:get="model.Capabilities?.SupportsVision ?? false"
+								       @bind:set="value => OnSetPinnedCapability.InvokeAsync(new PinnedCapabilityEdit(model, PinnedCapability.Vision, value))"
+								       disabled="@IsBusy"/>
+								vision
+							</label>
+							<label class="backend-check">
+								<input type="checkbox"
+								       @bind:get="model.Capabilities?.SupportsEmbeddings ?? false"
+								       @bind:set="value => OnSetPinnedCapability.InvokeAsync(new PinnedCapabilityEdit(model, PinnedCapability.Embeddings, value))"
+								       disabled="@IsBusy"/>
+								embeddings
+							</label>
+						</div>
+					</td>
+					<td>
+						<input type="number"
+						       class="model-context-input"
+						       min="1"
+						       aria-label="Context window override in tokens"
+						       placeholder="Inherit"
+						       @bind:get="GetContextOverride(model)"
+						       @bind:set="value => OnSetContextOverride.InvokeAsync(new PinnedContextEdit(model, value))"
+						       disabled="@IsBusy"/>
+					</td>
+				</tr>
+			}
+			else
+			{
+				@* A discovered (unpinned) model, or any model in a pin-ignoring (plug-and-play) backend,
+							 renders as a single read-only row. Pinning it via the checkbox promotes it to the paired
+							 editor above on the next render. *@
+				<tr @key='$"{rowIndex}#single"' class="@(detailsOpen ? "model-row-details-open" : null)">
+					@if (pinAware)
+					{
+						<td class="pin-column">
+							<input type="checkbox"
+							       aria-label="Pin @model.UpstreamModel"
+							       checked="@model.IsPinned"
+							       @onchange="() => OnTogglePin.InvokeAsync(model)"
+							       disabled="@IsBusy"/>
+						</td>
+					}
+					<th scope="row">
+						<span class="model-upstream">@model.UpstreamModel</span>
+						@if (hasDetails)
+						{
+							<button type="button"
+							        class="model-details-toggle"
+							        @onclick="() => OnToggleModelDetails.InvokeAsync(model)"
+							        aria-expanded="@(detailsOpen.ToString().ToLowerInvariant())"
+							        aria-controls="@detailPanelId"
+							        aria-label="@(detailsOpen ? "Hide model details" : "Show model details")">
+								@(detailsOpen ? "▾" : "▸")
+							</button>
+						}
+					</th>
+					@if (model.IsExposed)
+					{
+						<td class="model-exposed-cell">@model.ExposedName</td>
+					}
+					else
+					{
+						@* Explicit mode exposes the registry alone, so this unpinned model is not auto-exposed
+									   at runtime. Showing its would-be name would imply the proxy serves it, so the
+									   cell reads as a muted hint that pinning is what exposes it. *@
+						<td class="model-exposed-cell model-not-exposed"
+						    title="Explicit mode only exposes pinned models — pin this model to expose it as @model.ExposedName.">
+							— <span class="model-not-exposed-hint">(pin to expose)</span>
+						</td>
+					}
+					<td>
+						<ModelStateBadge State="model.State" Mode="Backend.Options.Mode"/>
+					</td>
+					<td>
+						@if (model.Capabilities is { } caps)
+						{
+							@* Resolved capabilities as shared chips; the component renders a muted "none" itself
+										   when nothing is supported or unconfirmed. *@
+							<CapabilityChips Capabilities="caps"/>
+						}
+						else
+						{
+							@* A probe-skipped discovery left capabilities undetermined: distinct from "none". *@
+							<span class="model-reported-none">—</span>
+						}
+					</td>
+					<td>@ContextSummary(model.ContextLength)</td>
+				</tr>
+			}
+
+			@* Detail panel: the backend's descriptive metadata for this model (display name, pricing,
+						   tokenizer, quantization, …), spanning the whole table under the model's row(s). Shown only
+						   when the operator expanded it and the backend reported metadata to show. *@
+			@if (detailsOpen && model.Metadata is { } detail)
+			{
+				<tr id="@detailPanelId" @key='$"{rowIndex}#detail"' class="model-detail-row">
+					@if (pinAware)
+					{
+						<td class="pin-column"></td>
+					}
+					<td colspan="@detailColspan" class="model-detail-cell">
+						<div class="model-detail-panel">
+							<p class="model-detail-heading">Backend-reported details</p>
+							<dl class="model-detail-fields">
+								@if (detail.DisplayName is { Length: > 0 } displayName)
+								{
+									<div class="model-detail-field">
+										<dt>Display name</dt>
+										<dd>@displayName</dd>
+									</div>
+								}
+								@if (detail.Tokenizer is { Length: > 0 } tokenizer)
+								{
+									<div class="model-detail-field">
+										<dt>Tokenizer</dt>
+										<dd>@tokenizer</dd>
+									</div>
+								}
+								@if (detail.Quantization is { Length: > 0 } quantization)
+								{
+									<div class="model-detail-field">
+										<dt>Quantization</dt>
+										<dd>@quantization</dd>
+									</div>
+								}
+								@if (detail.MaxCompletionTokens is { } maxCompletion)
+								{
+									<div class="model-detail-field">
+										<dt>Max output tokens</dt>
+										<dd>@maxCompletion.ToString("N0", CultureInfo.InvariantCulture)</dd>
+									</div>
+								}
+								@if (PriceSummary(detail) is { Length: > 0 } price)
+								{
+									<div class="model-detail-field">
+										<dt>Pricing (per 1M tokens)</dt>
+										<dd>@price</dd>
+									</div>
+								}
+								@if (detail.SourceUrl is { Length: > 0 } source)
+								{
+									<div class="model-detail-field">
+										<dt>Source</dt>
+										<dd>
+											<a href="@source" target="_blank" rel="noopener noreferrer">@source</a>
+										</dd>
+									</div>
+								}
+								@if (detail.Description is { Length: > 0 } description)
+								{
+									<div class="model-detail-field model-detail-field-wide">
+										<dt>Description</dt>
+										<dd>@description</dd>
+									</div>
+								}
+							</dl>
+						</div>
+					</td>
+				</tr>
+			}
+		}
+		</tbody>
+		</table>
+		</div>
+	}
+}
+</div>
+
+@code {
+
+	/// <summary>
+	/// The shared empty default for <see cref="DuplicateModelNames"/>. Using one
+	/// <see cref="StringComparer.OrdinalIgnoreCase"/> instance avoids allocating a set per render when the page
+	/// supplies no duplicates, while still matching the comparer membership checks expect.
+	/// </summary>
+	private static readonly IReadOnlySet<string> EmptyDuplicateNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// The reasoning-effort values offered in the per-model override dropdown, in ascending-budget order.
+	/// </summary>
+	private static readonly ReasoningEffort[] ReasoningEffortOptions =
+	[
+		ReasoningEffort.None,
+		ReasoningEffort.Minimal,
+		ReasoningEffort.Low,
+		ReasoningEffort.Medium,
+		ReasoningEffort.High,
+		ReasoningEffort.XHigh,
+		ReasoningEffort.Max
+	];
+
+	/// <summary>
+	/// Stable per-component suffix used for generated DOM ids. It prevents collisions between several backend model
+	/// tables without depending on mutable backend or model names.
+	/// </summary>
+	private readonly string mComponentId = Guid.NewGuid().ToString("N");
+
+	/// <summary>
+	/// The backend whose model list is rendered. The component uses its <c>Options.ModelPrefix</c> for the
+	/// prefixed-name affordance; the page owns the registry and its mutations.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public DesiredBackend Backend { get; set; } = null!;
+
+	/// <summary>
+	/// The current model-list state, supplying the streaming/finished flag, the running count, and the last
+	/// error message.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public ModelListState State { get; set; } = null!;
+
+	/// <summary>
+	/// The reconciliation result the page computed against the cached snapshot, or <see langword="null"/>
+	/// when no snapshot has loaded yet (the component renders the empty/error placeholder instead).
+	/// </summary>
+	[Parameter]
+	public ReconciliationResult? Reconciliation { get; set; }
+
+	/// <summary>
+	/// Whether the page is currently busy with a load or apply. Mirrored to every interactive control.
+	/// </summary>
+	[Parameter]
+	public bool IsBusy { get; set; }
+
+	/// <summary>
+	/// Whether the backend's effective mode ignores pins (plug-and-play). Drives the mode-note banner and
+	/// the visibility of the pin column.
+	/// </summary>
+	[Parameter]
+	public bool ModeIgnoresPins { get; set; }
+
+	/// <summary>
+	/// The set of client-facing model names this backend registers more than once, exactly as
+	/// <see cref="BackendOptions.FindDuplicateModelNames"/> reports them: trimmed and compared
+	/// case-insensitively. The page computes it from the live draft so a pinned row whose name collides with
+	/// another is marked invalid inline, giving the operator early feedback before Apply runs the authoritative
+	/// dry-run. The set must use <see cref="StringComparer.OrdinalIgnoreCase"/> so membership matches how the
+	/// runtime catalog keys models; it defaults to an empty set, so an unset parameter marks nothing.
+	/// </summary>
+	[Parameter]
+	public IReadOnlySet<string> DuplicateModelNames { get; set; } = EmptyDuplicateNames;
+
+	/// <summary>
+	/// Fired when the operator clicks Refresh. The page triggers a no-probe re-fetch.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnRefreshModels { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks Probe capabilities. The page triggers a streaming capability probe.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnProbeModels { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks Cancel during a streaming probe. The page signals the probe CTS.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnCancelProbe { get; set; }
+
+	/// <summary>
+	/// Fired when the operator toggles a model's pin checkbox. The page adds or removes the registry entry.
+	/// </summary>
+	[Parameter]
+	public EventCallback<ReconciledModel> OnTogglePin { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks "+ variant" on a pinned row. The page clones the pin into a second
+	/// registry entry that targets the same upstream model under a new, unique client-facing name, so one
+	/// upstream model can be exposed several times (for example at distinct fixed reasoning efforts).
+	/// </summary>
+	[Parameter]
+	public EventCallback<ReconciledModel> OnAddVariant { get; set; }
+
+	/// <summary>
+	/// Fired when the operator expands or collapses a model's metadata detail panel. The page toggles its
+	/// per-backend expanded-detail set.
+	/// </summary>
+	[Parameter]
+	public EventCallback<ReconciledModel> OnToggleModelDetails { get; set; }
+
+	/// <summary>
+	/// Returns <see langword="true"/> when the detail panel for the supplied reconciled model is currently
+	/// expanded. The page supplies the closure that captures the owning backend.
+	/// </summary>
+	[Parameter]
+	public Func<ReconciledModel, bool> IsDetailsExpanded { get; set; } = null!;
+
+	/// <summary>
+	/// Returns a pinned model's client-facing name for the editor field. The page supplies the closure
+	/// that captures the owning backend.
+	/// </summary>
+	[Parameter]
+	public Func<ReconciledModel, string> GetPinnedName { get; set; } = null!;
+
+	/// <summary>
+	/// The page-supplied setter for a pinned model's client-facing name. The page owns the upstream-id
+	/// pin-before-rename logic.
+	/// </summary>
+	[Parameter]
+	public EventCallback<PinnedNameEdit> OnSetPinnedName { get; set; }
+
+	/// <summary>
+	/// Returns a pinned model's reasoning-effort override for the selector. The page supplies the closure.
+	/// </summary>
+	[Parameter]
+	public Func<ReconciledModel, ReasoningEffort?> GetPinnedReasoning { get; set; } = null!;
+
+	/// <summary>
+	/// The page-supplied setter for a pinned model's reasoning-effort override.
+	/// </summary>
+	[Parameter]
+	public EventCallback<PinnedReasoningEdit> OnSetPinnedReasoning { get; set; }
+
+	/// <summary>
+	/// Returns a pinned model's context-length override for the editor field. The page supplies the closure.
+	/// </summary>
+	[Parameter]
+	public Func<ReconciledModel, int?> GetContextOverride { get; set; } = null!;
+
+	/// <summary>
+	/// The page-supplied setter for a pinned model's context-length override.
+	/// </summary>
+	[Parameter]
+	public EventCallback<PinnedContextEdit> OnSetContextOverride { get; set; }
+
+	/// <summary>
+	/// The page-supplied setter for one of a pinned model's four capability flags.
+	/// </summary>
+	[Parameter]
+	public EventCallback<PinnedCapabilityEdit> OnSetPinnedCapability { get; set; }
+
+	/// <summary>
+	/// Returns <see langword="true"/> when a pinned model's current client-facing name collides with another
+	/// entry on this backend, so the row's name input can be flagged inline. The name is trimmed before the
+	/// membership test to match <see cref="DuplicateModelNames"/>, whose keys are trimmed; a blank name is never
+	/// a duplicate (its own required-name rule reports it instead).
+	/// </summary>
+	/// <param name="model">The pinned model whose client-facing name is being checked.</param>
+	/// <returns>
+	/// <see langword="true"/> if <paramref name="model"/>'s trimmed name is one of the backend's
+	/// <see cref="DuplicateModelNames"/>; otherwise <see langword="false"/>.
+	/// </returns>
+	private bool IsDuplicateName(ReconciledModel model)
+	{
+		string name = GetPinnedName(model);
+		return !string.IsNullOrWhiteSpace(name) && DuplicateModelNames.Contains(name.Trim());
+	}
+
+	/// <summary>
+	/// Maps a reasoning-effort level to its human-readable dropdown label.
+	/// </summary>
+	private static string ReasoningEffortLabel(ReasoningEffort effort) => effort switch
+	{
+		ReasoningEffort.None    => "None",
+		ReasoningEffort.Minimal => "Minimal",
+		ReasoningEffort.Low     => "Low",
+		ReasoningEffort.Medium  => "Medium",
+		ReasoningEffort.High    => "High",
+		ReasoningEffort.XHigh   => "Extra high",
+		ReasoningEffort.Max     => "Max",
+		var _                   => throw new UnreachableException($"Unhandled reasoning effort '{effort}'.")
+	};
+
+	/// <summary>
+	/// Gets a short, human-readable description of how a drifted pin diverges from the backend's reported
+	/// shape, naming the capability and context differences so the operator can see what the pin still overrides.
+	/// </summary>
+	private static string DriftSummary(ReconciledModel model)
+	{
+		List<string> parts = [];
+
+		if (model.HasCapabilityDrift)
+		{
+			parts.Add($"capabilities are pinned as {CapabilitySummary(model.Capabilities)}, but the backend reports {CapabilitySummary(model.DiscoveredCapabilities)}");
+		}
+
+		if (model.HasContextDrift)
+		{
+			parts.Add($"context is pinned as {ContextSummary(model.ContextLength)}, but the backend reports {ContextSummary(model.DiscoveredContextLength)}");
+		}
+
+		return parts.Count > 0
+			       ? $"Pinned settings differ from the backend: {string.Join("; ", parts)}."
+			       : "Pinned settings differ from what the backend reports.";
+	}
+
+	/// <summary>
+	/// Gets a compact, comma-separated list of the capabilities a model supports, or a placeholder when none
+	/// are known or none are enabled.
+	/// </summary>
+	private static string CapabilitySummary(ModelCapabilities? capabilities)
+	{
+		if (capabilities is null) return "—";
+
+		List<string> flags = [];
+		if (capabilities.SupportsCompletion) flags.Add("completion");
+		if (capabilities.SupportsTools) flags.Add("tools");
+		if (capabilities.SupportsVision) flags.Add("vision");
+		if (capabilities.SupportsEmbeddings) flags.Add("embeddings");
+
+		return flags.Count > 0 ? string.Join(", ", flags) : "none";
+	}
+
+	/// <summary>
+	/// Gets a stable identifier for a model's detail panel so the toggle button can reference it with
+	/// <c>aria-controls</c>. The row index is unique within this rendered table and the component id prevents
+	/// collisions with other backend tables.
+	/// </summary>
+	/// <param name="rowIndex">The model row index in the current reconciliation table.</param>
+	/// <returns>A detail panel id unique to the model within this backend.</returns>
+	private string GetModelDetailPanelId(int rowIndex) => $"backend-model-detail-{mComponentId}-{rowIndex.ToString(CultureInfo.InvariantCulture)}";
+
+	/// <summary>
+	/// Gets a human-readable context-window value, formatting the token count with thousands separators or a
+	/// placeholder when none could be resolved.
+	/// </summary>
+	private static string ContextSummary(long? contextLength) => contextLength is { } tokens
+		                                                             ? tokens.ToString("N0", CultureInfo.InvariantCulture)
+		                                                             : "—";
+
+	/// <summary>
+	/// Formats a model's normalized per-million-token pricing for display, emitting an input/output pair when
+	/// both are known, a single labeled figure when only one is, or an empty string when the backend reported
+	/// no price.
+	/// </summary>
+	private static string PriceSummary(ProviderModelMetadata metadata)
+	{
+		string? input = FormatUsd(metadata.PromptUsdPerMillionTokens);
+		string? output = FormatUsd(metadata.CompletionUsdPerMillionTokens);
+
+		return (input, output) switch
+		{
+			({ } i, { } o) => $"in {i} · out {o}",
+			({ } i, null)  => $"in {i}",
+			(null, { } o)  => $"out {o}",
+			var _          => string.Empty
+		};
+	}
+
+	/// <summary>
+	/// Formats a USD amount with enough precision for the small per-token fractions, or <see langword="null"/>
+	/// when the amount is absent.
+	/// </summary>
+	private static string? FormatUsd(decimal? amount) => amount is { } value
+		                                                     ? "$" + value.ToString(value < 1m ? "0.####" : "0.00", CultureInfo.InvariantCulture)
+		                                                     : null;
+
+}

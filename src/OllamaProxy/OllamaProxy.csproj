@@ -31,6 +31,28 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!--
+			hostsettings.json is already picked up as a default Content item by the Web SDK; Update (not Include)
+			only sets it to copy beside the executable as the outer chassis defaults (admin port, run mode).
+			Under the Windows Service an operator copy at %ProgramData%\OllamaProxy\hostsettings.json overrides
+			these, mirroring how appsettings.json is layered. The Event Log provider used by the inner host is
+			part of the shared framework (and arrives transitively via the WindowsServices package above), so it
+			needs no direct PackageReference.
+		-->
+		<Content Update="hostsettings.json" CopyToOutputDirectory="PreserveNewest" />
+
+		<!--
+			appsettings.reference.json is documentation only: a fully annotated catalog of every supported
+			setting. It ships beside the application but is NEVER loaded — the host loads only appsettings.json
+			and appsettings.{Environment}.json by convention, and neither the inner-host builder nor the chassis
+			admin snapshot globs appsettings.*.json — so this file stays inert. Update (not Include) mirrors the
+			hostsettings.json line: the Web SDK already includes it as Content; this only makes it copy to output.
+		-->
+		<Content Update="appsettings.reference.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
 </Project>

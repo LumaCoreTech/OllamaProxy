@@ -1,0 +1,69 @@
+// =====================================================================================================
+//  OllamaProxy — outer chassis configuration (hostsettings.json)
+// =====================================================================================================
+//
+//  This file configures ONLY the outer host: the stable process anchor that the Windows Service Control
+//  Manager (or a foreground shell) keeps running while the inner proxy engine is recycled beneath it. The
+//  proxy engine itself — the listener URL, backends, models, tracing — is configured separately in
+//  appsettings.json under the OllamaProxy section. Keeping the two files apart means the two hosts never
+//  contend for the same port or configuration source.
+//
+//  Comments (// and /* */) and trailing commas are accepted by the .NET JSON configuration provider, so the
+//  annotations below are safe to keep.
+//
+//  OVERRIDES
+//    Any setting can be overridden by an environment variable using "__" (double underscore) as the section
+//    separator, e.g. Admin__Url=http://0.0.0.0:11435. An environment variable always wins over the value in
+//    this file. Under the Windows Service, an operator copy at %ProgramData%\OllamaProxy\hostsettings.json
+//    overrides these shipped defaults (but still loses to environment variables).
+// =====================================================================================================
+{
+  // ---------------------------------------------------------------------------------------------------
+  //  Logging — standard ASP.NET Core logging configuration for the outer chassis.
+  // ---------------------------------------------------------------------------------------------------
+  "Logging": {
+    "LogLevel": {
+      // Minimum level for everything not matched by a more specific entry.
+      // One of: Trace | Debug | Information | Warning | Error | Critical | None.
+      "Default": "Information",
+      // Quiet the framework's own request/hosting chatter; raise to "Information" to see it.
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+
+  // ---------------------------------------------------------------------------------------------------
+  //  Host — outer chassis lifecycle.
+  // ---------------------------------------------------------------------------------------------------
+  "Host": {
+    // How a failure to START the inner proxy host is handled. (A failed live RECYCLE is always non-fatal:
+    // the previous inner host keeps serving and the error is reported back.) One of:
+    //   "Auto"       (default) : Daemon under the Windows Service Control Manager, Foreground otherwise.
+    //   "Daemon"               : Stay resident on a start failure (log Critical, await a recycle). Set this
+    //                            for a Linux systemd service, which runs in the foreground yet must not exit
+    //                            on a transient misconfiguration.
+    //   "Foreground"           : Fail fast on a start failure (log Critical, exit non-zero). Least surprising
+    //                            for a console / "docker run -it" session.
+    "Mode": "Auto"
+  },
+
+  // ---------------------------------------------------------------------------------------------------
+  //  Admin — the outer chassis's own HTTP endpoint, kept separate from the proxy port (:11434). Use
+  //  "http://0.0.0.0:11435" to listen on all interfaces (e.g. inside a container).
+  // ---------------------------------------------------------------------------------------------------
+  "Admin": {
+    // Whether the management UI is served. Default true: a fresh install is manageable immediately on
+    // localhost. Set to false to disable the surface entirely — no admin page and no realtime connection,
+    // leaving only the /health and /ready probes on this port.
+    "Enabled": true,
+    "Url": "http://localhost:11435",
+    // How the admin surface persists backend API keys when it rewrites appsettings.json. This is a
+    // deployment-level decision (shown read-only in the UI), not a per-apply choice. One of:
+    //   "WriteToFile"     (default) : Keys are written into the file verbatim, for a self-contained
+    //                                 configuration an operator can copy between machines.
+    //   "EnvironmentOnly"           : Keys are written blank; supply each one through the environment
+    //                                 variable OllamaProxy__Backends__<name>__ApiKey instead. A backend
+    //                                 missing that variable fails validation on the next recycle.
+    // Either way, an environment variable always wins over the file at runtime.
+    "ApiKeyPersistencePolicy": "WriteToFile"
+  }
+}

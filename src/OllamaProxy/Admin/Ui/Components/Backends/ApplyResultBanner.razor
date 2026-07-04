@@ -1,0 +1,73 @@
+@using System.Diagnostics
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@* Outcome banner rendered at the bottom of the Backends page after a sync attempt. The CSS modifier token
+   (applied/rejected/failed) drives the .apply-result-* color rules in the scoped stylesheet so a successful
+   apply reads green, a validation rejection amber, and a write failure red. The error list is only rendered
+   when the result carries one: most rejections list the field-level reasons the dry-run produced. *@
+@if (Outcome.HasValue)
+{
+	<div class="apply-result apply-result-@CssModifier(Outcome.Value)">
+		<p class="apply-result-headline">@Headline(Outcome.Value)</p>
+		@if (Errors is { Count: > 0 })
+		{
+			<ul class="apply-result-errors">
+				@foreach (string error in Errors)
+				{
+					<li>@error</li>
+				}
+			</ul>
+		}
+	</div>
+}
+
+@code {
+
+	/// <summary>
+	/// The outcome of the most recent apply, or <see langword="null"/> when no apply has been attempted in
+	/// this page lifetime. When <see langword="null"/> the banner is omitted entirely; otherwise the CSS
+	/// modifier and headline reflect the outcome's class.
+	/// </summary>
+	[Parameter]
+	public ApplyOutcome? Outcome { get; set; }
+
+	/// <summary>
+	/// The field-level reasons the change was rejected, or the write-failure message when the apply could not
+	/// be persisted. Empty on success.
+	/// </summary>
+	[Parameter]
+	public IReadOnlyList<string>? Errors { get; set; }
+
+	/// <summary>
+	/// Maps an apply outcome to its result-banner CSS modifier. The tokens (<c>applied</c>, <c>rejected</c>,
+	/// <c>failed</c>) pair with the <c>.apply-result-*</c> rules in the scoped stylesheet.
+	/// </summary>
+	/// <param name="outcome">The apply outcome.</param>
+	/// <returns>The lower-case CSS modifier token for the outcome.</returns>
+	private static string CssModifier(ApplyOutcome outcome) => outcome switch
+	{
+		ApplyOutcome.Applied            => "applied",
+		ApplyOutcome.ValidationRejected => "rejected",
+		ApplyOutcome.WriteFailed        => "failed",
+		var _                           => throw new UnreachableException($"Unhandled apply outcome '{outcome}'.")
+	};
+
+	/// <summary>
+	/// Maps an apply outcome to its result-banner headline, telling the operator whether the change went live
+	/// or, for both non-success outcomes, that the previous configuration is still live.
+	/// </summary>
+	/// <param name="outcome">The apply outcome.</param>
+	/// <returns>The headline for the outcome.</returns>
+	private static string Headline(ApplyOutcome outcome) => outcome switch
+	{
+		ApplyOutcome.Applied => "Changes applied. The proxy is now running the updated configuration.",
+		ApplyOutcome.ValidationRejected =>
+			"The change was rejected and rolled back. The previous configuration is still live.",
+		ApplyOutcome.WriteFailed =>
+			"The configuration could not be written. The previous configuration is still live.",
+		var _ => throw new UnreachableException($"Unhandled apply outcome '{outcome}'.")
+	};
+
+}

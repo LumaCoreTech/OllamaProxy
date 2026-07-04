@@ -1,0 +1,37 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Global baseline for the admin surface. Scoped component CSS cannot reach <html>/<body>, so the
+   document-level reset that keeps the full-height shell flush to the viewport lives here. The admin shell
+   (AdminLayout) is a fixed 100vh app-shell that owns its own scrolling, so the document itself must never
+   scroll: height: 100% + overflow: hidden pins html/body to the viewport and prevents a second scrollbar
+   appearing beside the shell's internal one. */
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+/* FocusOnNavigate (Routes.razor) programmatically focuses the page <h1> after each navigation so screen readers
+   announce the new page. To make the heading focusable it receives tabindex="-1", which means the heading is never
+   reachable via Tab, only via that script-driven focus (or a direct click). We therefore drop its focus outline
+   outright: there is no keyboard-navigation case that needs the visible ring, and the screen-reader announcement
+   rides on the focus itself, not on the outline.
+
+   Note: this replaces an earlier :focus-visible approach. In this work we observed the outline still appeared on a
+   fresh reload with that approach; the likely cause is that browsers treat the programmatic focus as keyboard-like
+   when there was no prior pointer interaction, which kept :focus-visible active. */
+
+h1:focus {
+    outline: none;
+}

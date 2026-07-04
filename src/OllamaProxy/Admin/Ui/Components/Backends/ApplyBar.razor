@@ -1,0 +1,267 @@
+@using Microsoft.Extensions.Options
+@using OllamaProxy.Hosting
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+@inject IOptions<AdminOptions> AdminOptions
+
+@* Sync bar rendered at the bottom of the Backends page: the structural-error status (or its
+   clean baseline), a read-only hint about the configured API-key persistence policy, the Apply button
+   (disabled while the page is busy or a structural error blocks the apply), and the environment-variable
+   hint that surfaces when the deployment chose <see cref="ApiKeyPersistencePolicy.EnvironmentOnly"/>. *@
+<div class="sync-bar@(JumpRingClass(JumpFocusTarget.Root))" @ref="mRootElement" tabindex="@RootTabIndex" @onblur="ClearJumpRing" role="group" aria-label="Apply or discard configuration changes">
+	<div class="sync-bar-status">
+		@if (StructuralError is { } structural)
+		{
+			<span class="sync-bar-dirty">@structural</span>
+		}
+		else
+		{
+			<span class="sync-bar-clean">Apply writes the whole configuration and recycles the proxy.</span>
+		}
+	</div>
+
+	<div class="sync-bar-policy">
+		<span class="sync-bar-policy-label">API keys:</span>
+		@if (AdminOptions.Value.ApiKeyPersistencePolicy == ApiKeyPersistencePolicy.WriteToFile)
+		{
+			<span class="sync-bar-policy-value" title="Configured in the Admin section. Keys are saved in the configuration file.">
+				Saved in configuration file
+			</span>
+		}
+		else
+		{
+			<span class="sync-bar-policy-value" title="Configured in the Admin section. Keys are blanked; supply them through environment variables.">
+				Environment variables only
+			</span>
+		}
+	</div>
+
+	<div class="sync-bar-actions">
+		<button type="button"
+		        class="sync-bar-discard@(JumpRingClass(JumpFocusTarget.Discard))"
+		        @ref="mDiscardButton"
+		        @onclick="OnDiscard"
+		        @onblur="ClearJumpRing"
+		        disabled="@(!DiscardEnabled)">
+			@(IsDiscarding ? "Discarding…" : "Discard changes")
+		</button>
+
+		<button type="button"
+		        class="sync-bar-apply@(JumpRingClass(JumpFocusTarget.Apply))"
+		        @ref="mApplyButton"
+		        @onclick="OnApply"
+		        @onblur="ClearJumpRing"
+		        disabled="@(!ApplyEnabled)">
+			@(IsApplying ? "Applying…" : "Apply")
+		</button>
+	</div>
+
+	@if (ShowEnvironmentKeyHint && AdminOptions.Value.ApiKeyPersistencePolicy == ApiKeyPersistencePolicy.EnvironmentOnly)
+	{
+		<p class="sync-bar-hint">
+			<svg class="sync-bar-hint-icon" viewBox="0 0 16 16" aria-hidden="true">
+				<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/>
+				<line x1="8" y1="7" x2="8" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+				<circle cx="8" cy="4.5" r="0.9" fill="currentColor"/>
+			</svg>
+			<span>
+				Each backend's API key will be blanked in the file. Supply it at runtime through the environment
+				variable <code>OllamaProxy__Backends__&lt;name&gt;__ApiKey</code>; a backend missing this variable
+				fails validation on the next recycle.
+			</span>
+		</p>
+	}
+</div>
+
+@code {
+
+	/// <summary>
+	/// The sync bar's root element. Used as the focus target of last resort when both action buttons are
+	/// disabled (a clean draft), so <see cref="FocusAsync"/> always has somewhere to land and the operator still
+	/// sees the bar has focus. In that same state <see cref="RootTabIndex"/> makes it a Tab stop too.
+	/// </summary>
+	private ElementReference mRootElement;
+
+	/// <summary>
+	/// The Discard button, the preferred focus target: it is the first control in the bar, so focusing it lands
+	/// the operator on an actionable button with Apply one Tab away, matching the visual order.
+	/// </summary>
+	private ElementReference mDiscardButton;
+
+	/// <summary>
+	/// The Apply button, focused when Discard is disabled but Apply is not. In practice both share the same
+	/// dirty-driven enabled state, so this is a defensive fallback rather than a common path.
+	/// </summary>
+	private ElementReference mApplyButton;
+
+	/// <summary>
+	/// Identifies which control, if any, currently carries the jump focus ring. Set by <see cref="FocusAsync"/>
+	/// and cleared on blur so the ring is a deterministic consequence of the jump rather than the browser's
+	/// <c>:focus-visible</c> heuristic, which does not fire for a focus applied several async hops after the
+	/// Ctrl+Enter keypress (the interop round-trip loses the keyboard association the heuristic depends on).
+	/// </summary>
+	private JumpFocusTarget mJumpTarget = JumpFocusTarget.None;
+
+	/// <summary>
+	/// The sync bar controls that <see cref="FocusAsync"/> can land the jump ring on.
+	/// </summary>
+	private enum JumpFocusTarget
+	{
+		/// <summary>
+		/// No control carries the jump ring.
+		/// </summary>
+		None,
+
+		/// <summary>
+		/// The bar container (fallback when both buttons are disabled).
+		/// </summary>
+		Root,
+
+		/// <summary>
+		/// The Discard button.
+		/// </summary>
+		Discard,
+
+		/// <summary>
+		/// The Apply button.
+		/// </summary>
+		Apply
+	}
+
+	/// <summary>
+	/// Whether the Discard button is currently enabled. Shared by the button's <c>disabled</c> binding,
+	/// <see cref="FocusAsync"/>, and <see cref="RootTabIndex"/> so the three never disagree about the bar's state.
+	/// </summary>
+	private bool DiscardEnabled => !IsBusy && CanDiscard;
+
+	/// <summary>
+	/// Whether the Apply button is currently enabled. Shared by the button's <c>disabled</c> binding,
+	/// <see cref="FocusAsync"/>, and <see cref="RootTabIndex"/> so the three never disagree about the bar's state.
+	/// </summary>
+	private bool ApplyEnabled => !IsBusy && StructuralError is null && CanApply;
+
+	/// <summary>
+	/// The <c>tabindex</c> for the bar's container. It is <c>0</c> only when both action buttons are disabled
+	/// (a clean draft), so Tab still reaches the bar as a focusable region just as the Ctrl+Enter jump does; the
+	/// two navigation paths then agree. While either button is enabled the buttons are the real tab stops, so the
+	/// container stays <c>-1</c> to avoid a redundant third stop in front of them.
+	/// </summary>
+	private int RootTabIndex => DiscardEnabled || ApplyEnabled ? -1 : 0;
+
+	/// <summary>
+	/// Moves keyboard focus into the sync bar so keyboard and screen-reader users can act on the commit controls
+	/// directly. Invoked by the owning page's Ctrl+Enter shortcut. Focus lands on the first enabled button
+	/// (Discard, then Apply) so the operator sees a real button ring and can act immediately without an extra Tab;
+	/// if both are disabled (a clean draft) it falls back to the bar's container so the jump still has a visible,
+	/// announced target. The matching jump ring is applied explicitly (see <see cref="mJumpTarget"/>) so it shows
+	/// regardless of how the browser classifies the programmatic focus.
+	/// </summary>
+	/// <returns>A task that completes once the browser has moved focus.</returns>
+	public ValueTask FocusAsync()
+	{
+		ElementReference target;
+
+		if (DiscardEnabled)
+		{
+			mJumpTarget = JumpFocusTarget.Discard;
+			target = mDiscardButton;
+		}
+		else if (ApplyEnabled)
+		{
+			mJumpTarget = JumpFocusTarget.Apply;
+			target = mApplyButton;
+		}
+		else
+		{
+			mJumpTarget = JumpFocusTarget.Root;
+			target = mRootElement;
+		}
+
+		// Render the ring class before moving focus. The Ctrl+Enter path arrives through a [JSInvokable] callback
+		// that does not re-render on its own, so without this the ring would never appear. The callback runs on the
+		// renderer's synchronization context, so calling StateHasChanged here is safe. Updating the class attribute
+		// does not blur the element, so the focus applied on the next line survives the render.
+		StateHasChanged();
+		return target.FocusAsync();
+	}
+
+	/// <summary>
+	/// Returns the jump-ring CSS class suffix for <paramref name="target"/> when it currently holds the jump
+	/// focus, or an empty string otherwise. Rendered directly into each control's <c>class</c> attribute.
+	/// </summary>
+	/// <param name="target">The control being rendered.</param>
+	/// <returns><c>" is-jump-focused"</c> when the control owns the jump ring; otherwise an empty string.</returns>
+	private string JumpRingClass(JumpFocusTarget target) => mJumpTarget == target ? " is-jump-focused" : string.Empty;
+
+	/// <summary>
+	/// Clears the jump ring when the focused control loses focus, so the explicit ring behaves like a real focus
+	/// ring: it disappears as soon as the operator tabs or clicks away rather than lingering on a blurred control.
+	/// </summary>
+	private void ClearJumpRing() => mJumpTarget = JumpFocusTarget.None;
+
+	/// <summary>
+	/// The structural problem that would make the desired state impossible to key by name (a blank backend
+	/// name or duplicate names), or <see langword="null"/> when the draft is structurally sound. When set,
+	/// the bar shows the message in the dirty palette and disables Apply.
+	/// </summary>
+	[Parameter]
+	public string? StructuralError { get; set; }
+
+	/// <summary>
+	/// Whether the page is currently busy with a load or apply. Mirrored to the Apply and Discard buttons
+	/// so the bar disables itself as a whole.
+	/// </summary>
+	[Parameter]
+	public bool IsBusy { get; set; }
+
+	/// <summary>
+	/// Whether an apply is currently running. Drives the button label ("Apply" vs "Applying…") only; the
+	/// button's disabled state comes from <see cref="IsBusy"/>.
+	/// </summary>
+	[Parameter]
+	public bool IsApplying { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks Apply. The page handles the apply itself (load + recycle) and the
+	/// bar just signals intent.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnApply { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks Discard changes. The page reloads the draft from the live configuration.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnDiscard { get; set; }
+
+	/// <summary>
+	/// Whether a discard operation is currently running. Drives the discard button label.
+	/// </summary>
+	[Parameter]
+	public bool IsDiscarding { get; set; }
+
+	/// <summary>
+	/// Whether the discard button should be enabled. The owning page sets this based on whether there are
+	/// unsaved changes to discard.
+	/// </summary>
+	[Parameter]
+	public bool CanDiscard { get; set; }
+
+	/// <summary>
+	/// Whether the apply button should be enabled. The owning page sets this based on whether there are
+	/// unsaved changes to apply.
+	/// </summary>
+	[Parameter]
+	public bool CanApply { get; set; } = true;
+
+	/// <summary>
+	/// Whether to render the environment-variable API-key hint when the deployment uses the
+	/// <see cref="ApiKeyPersistencePolicy.EnvironmentOnly"/> policy. Defaults to <see langword="true"/> for the
+	/// backend page, whose keys the hint describes; the general configuration page sets it to <see langword="false"/>
+	/// because that hint is backend-specific and does not apply there.
+	/// </summary>
+	[Parameter]
+	public bool ShowEnvironmentKeyHint { get; set; } = true;
+
+}

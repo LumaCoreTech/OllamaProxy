@@ -1,0 +1,111 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Page wrapper: caps and centers the welcome content at the layout width. The shell container
+   (.admin-shell-content) is width-neutral, so this wrapper restores the comfortable centered column the hero and
+   text need; without it the hero band would stretch across the full canvas. Matches the old shared container cap
+   (64rem) so Home looks exactly as before the container stopped owning the width. */
+
+.home-page {
+    max-width: var(--admin-layout-content-width);
+    margin-inline: auto;
+}
+
+/* Welcome hero: a dark navy band that greets the visitor with the logo. The admin theme is otherwise light, but
+   the logo is drawn on its own dark backdrop, so the hero gives it a matching dark surface rather than letting a
+   square dark image sit awkwardly on the pale page. The navy matches the shell header (#16213e), and the subtle
+   radial cyan wash plus the tile glow pick up the logo's own neon accent (the same #4dabf7 family the header tabs
+   use), so the band reads as part of the existing brand rather than a separate insert. */
+
+.home-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 2.5rem 1.5rem;
+    margin-bottom: 2rem;
+    text-align: center;
+    background-color: var(--admin-brand-navy);
+    background-image: radial-gradient(circle at 50% 35%, rgba(var(--admin-brand-accent-rgb), 0.18), rgba(22, 33, 62, 0) 60%);
+    border-radius: 0.75rem;
+}
+
+/* Logo tile: the image framed as a rounded, softly glowing square so its straight edge reads as a deliberate tile
+   rather than a pasted-in picture. The glow is the logo's neon cyan, kept low-opacity so it halos without
+   overpowering. */
+
+.home-hero-logo {
+    width: 240px;
+    height: auto;
+    padding: 1.0rem 1.0rem;
+    border-radius: 1rem;
+    box-shadow: var(--admin-shadow-logo-glow);
+}
+
+.home-hero-tagline {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--admin-text-on-dark-muted);
+}
+
+/* About section: centered as a calm column beneath the hero so the page keeps the hero's symmetry instead of
+   drifting left. The heading and intro are centered; the link rows stay left-aligned internally because the
+   label + note pairs read better that way. */
+
+.home-about-title {
+    text-align: center;
+}
+
+.home-lead {
+    max-width: 42rem;
+    margin-inline: auto;
+    color: var(--admin-text-secondary);
+    line-height: 1.5;
+    text-align: center;
+}
+
+/* Project links: each entry is a card-like row with the resource name as the action and a muted one-line note
+   beside it. Borders and hover use the shell accent (#4dabf7) so the list ties back to the brand. */
+
+.home-links {
+    list-style: none;
+    margin: 1.5rem auto 0;
+    padding: 0;
+    max-width: 42rem;
+}
+
+.home-links li {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--admin-border-muted);
+    border-radius: 0.5rem;
+}
+
+.home-links li + li {
+    margin-top: 0.5rem;
+}
+
+.home-links li:hover {
+    border-color: var(--admin-brand-accent);
+}
+
+.home-links a {
+    font-weight: 600;
+    color: var(--admin-info-muted);
+    text-decoration: none;
+}
+
+.home-links a:hover {
+    text-decoration: underline;
+}
+
+.home-link-note {
+    color: var(--admin-text-muted);
+    font-size: 0.9rem;
+}

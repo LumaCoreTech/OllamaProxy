@@ -1,0 +1,264 @@
+@using System.Diagnostics
+@using OllamaProxy.Configuration
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@* Advanced settings disclosure for a single backend: the rarely-changed knobs (default context window,
+   exposure prefix, default reasoning effort, capability probing) kept behind a collapsed disclosure so the
+   common case (name, URL, provider, key, mode) stays uncluttered. Several backends' advanced sections may
+   be open at once; it is a local disclosure, not a single-selection accordion like the cards. The header is
+   the toggle button; the body is the field set, conditionally rendered when the disclosure is open. *@
+<div class="backend-advanced">
+	<button type="button"
+	        class="backend-advanced-header"
+	        @onclick="OnToggle"
+	        disabled="@IsBusy"
+	        aria-expanded="@(Expanded.ToString().ToLowerInvariant())"
+	        aria-controls="@AdvancedBodyId"
+	        aria-label="@(Expanded ? "Hide advanced settings" : "Show advanced settings")">
+		<span class="backend-expand-indicator">@(Expanded ? "▾" : "▸")</span>
+		<span class="backend-advanced-title">Advanced</span>
+	</button>
+
+	@if (Expanded)
+	{
+		<div id="@AdvancedBodyId" class="backend-advanced-body">
+			<div class="backend-field">
+				<label>
+					Default context length
+					<input type="number"
+					       min="1"
+					       step="1"
+					       @bind="Backend.Options.ContextLength"
+					       @bind:after="NotifyChanged"
+					       placeholder="Backend default"
+					       disabled="@IsBusy"/>
+				</label>
+				<p class="backend-field-hint">
+					Fallback context window in tokens for auto-exposed models. The value a backend reports always
+					wins; this default only fills the gap for providers that report nothing. To deliberately
+					shrink a single model below what its backend reports, set a per-model context override instead.
+				</p>
+			</div>
+
+			<div class="backend-field">
+				<label>
+					Model prefix
+					<input type="text"
+					       @bind:get="Backend.Options.ModelPrefix"
+					       @bind:set="value => OnModelPrefixChanged.InvokeAsync(value)"
+					       placeholder="e.g. vllm"
+					       disabled="@IsBusy"/>
+				</label>
+				<p class="backend-field-hint">
+					Applied to every exposed model name as <code>prefix/model</code> to disambiguate the same
+					model served by multiple backends. Must not contain <code>/</code>. Leave blank for the bare
+					name.
+				</p>
+			</div>
+
+			<div class="backend-field">
+				<label>
+					Default reasoning effort
+					<select @bind="Backend.Options.ReasoningEffort" @bind:after="NotifyChanged" disabled="@IsBusy">
+						<option value="">Unspecified (no directive)</option>
+						@foreach (ReasoningEffort effort in ReasoningEffortOptions)
+						{
+							<option value="@effort">@ReasoningEffortLabel(effort)</option>
+						}
+					</select>
+				</label>
+				<p class="backend-field-hint">
+					Sent with chat requests that do not specify their own effort. Leave unspecified to send no
+					reasoning directive unless the client asks for one.
+				</p>
+			</div>
+
+			<fieldset class="backend-probing">
+				<legend>Capability probing</legend>
+				<p class="backend-field-hint">
+					Tiny throwaway requests that confirm a model's capabilities when the backend's metadata is
+					inconclusive. Each costs an upstream round trip per model; turn off the ones you do not need.
+				</p>
+
+				<div class="backend-probing-toggles">
+					<label class="backend-check">
+						<input type="checkbox"
+						       @bind="Backend.Options.Probing.ProbeCompletion"
+						       @bind:after="NotifyChanged"
+						       disabled="@IsBusy"/>
+						Completion
+					</label>
+					<label class="backend-check">
+						<input type="checkbox" @bind="Backend.Options.Probing.ProbeTools" @bind:after="NotifyChanged" disabled="@IsBusy"/>
+						Tools
+					</label>
+					<label class="backend-check">
+						<input type="checkbox" @bind="Backend.Options.Probing.ProbeVision" @bind:after="NotifyChanged" disabled="@IsBusy"/>
+						Vision
+					</label>
+					<label class="backend-check">
+						<input type="checkbox"
+						       @bind="Backend.Options.Probing.ProbeEmbeddings"
+						       @bind:after="NotifyChanged"
+						       disabled="@IsBusy"/>
+						Embeddings
+					</label>
+				</div>
+
+				<div class="backend-probing-knobs">
+					<label>
+						Timeout (s)
+						<input type="number"
+						       min="@CapabilityProbingOptions.MinimumTimeoutSeconds"
+						       max="@CapabilityProbingOptions.MaximumTimeoutSeconds"
+						       step="1"
+						       @bind="Backend.Options.Probing.TimeoutSeconds"
+						       @bind:after="NotifyChanged"
+						       disabled="@IsBusy"/>
+					</label>
+					<label>
+						Interactive timeout (s)
+						<input type="number"
+						       min="@CapabilityProbingOptions.MinimumInteractiveTimeoutSeconds"
+						       max="@CapabilityProbingOptions.MaximumInteractiveTimeoutSeconds"
+						       step="1"
+						       @bind="Backend.Options.Probing.InteractiveTimeoutSeconds"
+						       @bind:after="NotifyChanged"
+						       disabled="@IsBusy"/>
+					</label>
+					<label>
+						Max retries
+						<input type="number"
+						       min="@CapabilityProbingOptions.MinimumMaxProbeRetries"
+						       max="@CapabilityProbingOptions.MaximumMaxProbeRetries"
+						       step="1"
+						       @bind="Backend.Options.Probing.MaxProbeRetries"
+						       @bind:after="NotifyChanged"
+						       disabled="@IsBusy"/>
+					</label>
+					<label>
+						Retry base delay (s)
+						<input type="number"
+						       min="@CapabilityProbingOptions.MinimumRetryBaseDelaySeconds"
+						       max="@CapabilityProbingOptions.MaximumRetryBaseDelaySeconds"
+						       step="1"
+						       @bind="Backend.Options.Probing.RetryBaseDelaySeconds"
+						       @bind:after="NotifyChanged"
+						       disabled="@IsBusy"/>
+					</label>
+					<label>
+						Max concurrent probes
+						<input type="number"
+						       min="@CapabilityProbingOptions.MinimumMaxConcurrentProbes"
+						       max="@CapabilityProbingOptions.MaximumMaxConcurrentProbes"
+						       step="1"
+						       @bind="Backend.Options.Probing.MaxConcurrentProbes"
+						       @bind:after="NotifyChanged"
+						       disabled="@IsBusy"/>
+					</label>
+				</div>
+			</fieldset>
+		</div>
+	}
+</div>
+
+@code {
+
+	/// <summary>
+	/// The reasoning-effort values offered in the per-backend default dropdown, in ascending-budget order. The
+	/// dropdown also carries a leading blank "unspecified" option (the <see langword="null"/> default) that this
+	/// list does not include, since it represents the absence of a value rather than one of the levels.
+	/// </summary>
+	private static readonly ReasoningEffort[] ReasoningEffortOptions =
+	[
+		ReasoningEffort.None,
+		ReasoningEffort.Minimal,
+		ReasoningEffort.Low,
+		ReasoningEffort.Medium,
+		ReasoningEffort.High,
+		ReasoningEffort.XHigh,
+		ReasoningEffort.Max
+	];
+
+	/// <summary>
+	/// The backend whose advanced settings are rendered. The component binds directly to the options the
+	/// page supplies; the page is responsible for handing in the current draft instance and updating it on
+	/// mutation.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public DesiredBackend Backend { get; set; } = null!;
+
+	/// <summary>
+	/// Whether the disclosure is currently open. Driven by the page so the open/closed state survives
+	/// reloads (the page keeps the per-backend set; the component is presentational only).
+	/// </summary>
+	[Parameter]
+	public bool Expanded { get; set; }
+
+	/// <summary>
+	/// A stable id for the advanced body so the disclosure header can reference it with
+	/// <c>aria-controls</c> without depending on the user-editable backend name.
+	/// </summary>
+	private string AdvancedBodyId { get; } = $"backend-advanced-{Guid.NewGuid():N}";
+
+	/// <summary>
+	/// Whether the page is currently busy with a load or apply. Mirrored to every interactive control so the
+	/// editor disables itself as a whole.
+	/// </summary>
+	[Parameter]
+	public bool IsBusy { get; set; }
+
+	/// <summary>
+	/// Fired when the operator clicks the disclosure header. The page toggles its per-backend membership set
+	/// and re-renders with the new <see cref="Expanded"/> value.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnToggle { get; set; }
+
+	/// <summary>
+	/// Fired when the operator edits the model-prefix field. The page normalizes the raw input string
+	/// (trimming, blank-to-null) and triggers a re-render so the reconciliation table refreshes the exposed
+	/// names. Using <see cref="EventCallback{T}"/> ensures Blazor re-renders the parent page, not just this
+	/// component.
+	/// </summary>
+	[Parameter]
+	public EventCallback<string?> OnModelPrefixChanged { get; set; }
+
+	/// <summary>
+	/// Fired after the operator edits one of the plain-bound advanced fields (context length, reasoning effort,
+	/// probing toggles, and probing knobs). Those fields use a bare <c>@bind</c> on a POCO property, which by
+	/// itself only re-renders this component and leaves the page-level dirty state stale. Invoking this callback
+	/// (via <c>@bind:after</c>) re-renders the parent page so its Apply/Discard gate and unsaved-changes guard
+	/// re-evaluate. The model-prefix field does not use this callback because its <c>@bind:set</c> handler
+	/// already bubbles to the page.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnConfigurationChanged { get; set; }
+
+	/// <summary>
+	/// Notifies the page that a plain-bound advanced field changed so it can re-evaluate its dirty state.
+	/// </summary>
+	/// <returns>A task that completes when the parent has been notified.</returns>
+	private Task NotifyChanged() => OnConfigurationChanged.InvokeAsync();
+
+	/// <summary>
+	/// Maps a reasoning-effort level to its human-readable dropdown label.
+	/// </summary>
+	/// <param name="effort">The reasoning-effort level to label.</param>
+	/// <returns>The display label for the effort level.</returns>
+	private static string ReasoningEffortLabel(ReasoningEffort effort) => effort switch
+	{
+		ReasoningEffort.None    => "None",
+		ReasoningEffort.Minimal => "Minimal",
+		ReasoningEffort.Low     => "Low",
+		ReasoningEffort.Medium  => "Medium",
+		ReasoningEffort.High    => "High",
+		ReasoningEffort.XHigh   => "Extra high",
+		ReasoningEffort.Max     => "Max",
+		var _                   => throw new UnreachableException($"Unhandled reasoning effort '{effort}'.")
+	};
+
+}

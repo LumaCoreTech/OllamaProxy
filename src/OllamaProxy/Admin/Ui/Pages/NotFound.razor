@@ -1,0 +1,16 @@
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@page "/not-found"
+@layout AdminLayout
+
+@* Reached two ways, both landing here. In-app navigation and NavigationManager.NotFound() use the
+   router's NotFoundPage (the .NET 10 replacement for the deprecated <NotFound> fragment). A direct
+   deep link to an unknown path dies at server-side routing with a 404; Program.cs re-executes that
+   404 against this /not-found route so the styled page still renders. @layout keeps it inside the
+   admin shell, the same framing the old inline LayoutView provided. *@
+
+<PageTitle>Not found</PageTitle>
+
+<p role="alert">Sorry, there's nothing at this address.</p>

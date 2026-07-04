@@ -1,0 +1,138 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* The configuration page is a form column, not a wide-table page. Cap it at the shared reading width so the
+   section cards stay a comfortable, tight column instead of stretching to their widest content, and center it
+   with margin-inline: auto. The shell container (.admin-shell-content) is width-neutral now, so a capped page
+   that does not center itself would sit at the canvas's left edge; the auto margins keep this form column
+   centered under the header. Wide tables (Backends, Models) opt into max-content on their own page wrappers;
+   this page does not. */
+
+.configuration-page {
+    max-width: var(--admin-reading-width);
+    margin-inline: auto;
+}
+
+.configuration-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.configuration-status {
+    color: var(--admin-text-secondary);
+}
+
+.configuration-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.configuration-section {
+    padding: 1rem 1.25rem;
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-card);
+    border-radius: 0.5rem;
+}
+
+.configuration-section-title {
+    margin: 0 0 0.4rem;
+    font-size: 1.1rem;
+    color: var(--admin-brand-navy);
+}
+
+.configuration-section-help {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+    color: var(--admin-text-secondary);
+    max-width: var(--admin-prose-width);
+}
+
+.configuration-section-help code {
+    padding: 0.1rem 0.3rem;
+    background-color: var(--admin-surface-code-alt);
+    border-radius: 0.2rem;
+    font-size: 0.85rem;
+}
+
+.configuration-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.9rem;
+}
+
+.configuration-field:last-child {
+    margin-bottom: 0;
+}
+
+.configuration-field-inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.configuration-label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--admin-brand-navy);
+}
+
+.configuration-field-hint {
+    font-size: 0.85rem;
+    color: var(--admin-text-secondary);
+    max-width: var(--admin-prose-width);
+}
+
+.configuration-field-hint code {
+    padding: 0.1rem 0.3rem;
+    background-color: var(--admin-surface-code-alt);
+    border-radius: 0.2rem;
+    font-size: 0.8rem;
+}
+
+.configuration-input {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.95rem;
+    color: var(--admin-brand-navy);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+    border-radius: 0.3rem;
+    max-width: 28rem;
+}
+
+.configuration-input-narrow {
+    max-width: 10rem;
+}
+
+.configuration-input:disabled {
+    background-color: var(--admin-surface-code-alt);
+    opacity: 0.7;
+}
+
+.configuration-validation {
+    font-size: 0.85rem;
+    color: var(--admin-danger-validation);
+}
+
+.configuration-warning {
+    margin: 0.5rem 0 0;
+    padding: 0.6rem 0.8rem;
+    background-color: var(--admin-danger-bg-light);
+    border-left: 4px solid var(--admin-danger-validation);
+    border-radius: 0 0.3rem 0.3rem 0;
+    font-size: 0.9rem;
+    color: var(--admin-danger-validation-text);
+    max-width: var(--admin-prose-width);
+}
+
+.configuration-warning code {
+    padding: 0.1rem 0.3rem;
+    background-color: var(--admin-danger-validation-bg);
+    border-radius: 0.2rem;
+    font-size: 0.85rem;
+}

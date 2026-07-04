@@ -1,0 +1,55 @@
+@using System.Diagnostics
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@* The shared pill primitive for the admin surface. The badge shape and palette live in exactly one place,
+   so every badge (model state, drift, operating mode) matches without each call site re-declaring the shape.
+   Before this primitive the shape was copied into three scoped stylesheets; because Blazor CSS isolation
+   scopes each copy to its own component, rendering a "bare" badge in a different component silently dropped
+   the shape (the drift chip regression). Routing every badge through this one component means the shape can
+   never go missing across a component boundary again.
+
+   Any extra attribute (title, aria-*, data-*) is splatted onto the rendered <span>, so a caller can attach a
+   tooltip (the drift chip's DriftSummary) without this component needing a dedicated parameter for it. *@
+<span class="badge @VariantCssClass(Variant)" @attributes="AdditionalAttributes">@ChildContent</span>
+
+@code {
+
+	/// <summary>
+	/// The badge's colour family. Callers pick by semantic role (success, danger, …) rather than raw colour so
+	/// the palette stays consistent across the admin surface.
+	/// </summary>
+	[Parameter]
+	public BadgeVariant Variant { get; set; } = BadgeVariant.Neutral;
+
+	/// <summary>
+	/// The badge's label content, typically a short text such as <c>Available</c> or <c>Drifted</c>.
+	/// </summary>
+	[Parameter]
+	public RenderFragment? ChildContent { get; set; }
+
+	/// <summary>
+	/// Any additional HTML attributes (for example <c>title</c> for a tooltip, or <c>aria-*</c>) splatted onto
+	/// the rendered <c>&lt;span&gt;</c>. Lets a call site attach a tooltip without a dedicated parameter.
+	/// </summary>
+	[Parameter(CaptureUnmatchedValues = true)]
+	public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
+
+	/// <summary>
+	/// Maps a badge variant to its colour CSS class, pairing each variant with its <c>.badge-*</c> rule in the
+	/// scoped stylesheet.
+	/// </summary>
+	/// <param name="variant">The variant to style.</param>
+	/// <returns>The lower-case CSS class for the variant.</returns>
+	private static string VariantCssClass(BadgeVariant variant) => variant switch
+	{
+		BadgeVariant.Neutral => "badge-neutral",
+		BadgeVariant.Success => "badge-success",
+		BadgeVariant.Danger  => "badge-danger",
+		BadgeVariant.Info    => "badge-info",
+		BadgeVariant.Warning => "badge-warning",
+		var _                => throw new UnreachableException($"Unhandled badge variant '{variant}'.")
+	};
+
+}

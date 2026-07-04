@@ -1,0 +1,139 @@
+@using OllamaProxy.Configuration
+@using OllamaProxy.Providers.Abstractions
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@* Connection/probing form kept at a comfortable form width so its inputs and prose never stretch to the
+   card's full width; the card itself may grow wide to fit the model table below. Holds the common-case
+   fields (name, provider, base URL, API key, mode); the rarely-changed knobs live in <see cref="BackendAdvanced"/>
+   which sits below. *@
+<div class="backend-settings">
+	<div class="backend-field">
+		<label>
+			Name
+			<input type="text" @bind="Backend.Name" @bind:after="NotifyChanged" disabled="@IsBusy"/>
+		</label>
+	</div>
+	<div class="backend-field">
+		<label>
+			Provider
+			<select @bind:get="Backend.Options.ProviderType"
+			        @bind:set="value => OnProviderTypeChanged.InvokeAsync(value)"
+			        disabled="@IsBusy">
+				@foreach (ProviderDescriptor provider in Providers)
+				{
+					<option value="@provider.ProviderType">@provider.DisplayName</option>
+				}
+			</select>
+		</label>
+	</div>
+	<div class="backend-field">
+		<label>
+			Base URL
+			<input type="url"
+			       @bind="Backend.Options.BaseUrl"
+			       @bind:after="NotifyChanged"
+			       placeholder="https://api.example.com/v1"
+			       disabled="@IsBusy"/>
+		</label>
+	</div>
+	<div class="backend-field">
+		<label>
+			API key
+			<input type="password"
+			       @bind="Backend.Options.ApiKey"
+			       @bind:after="NotifyChanged"
+			       placeholder="@ApiKeyPlaceholder(Backend)"
+			       disabled="@IsBusy"/>
+		</label>
+	</div>
+	<div class="backend-field">
+		<label>
+			Mode
+			<select @bind:get="Backend.Options.Mode"
+			        @bind:set="value => OnModeChanged.InvokeAsync(value as OperatingMode?)"
+			        disabled="@IsBusy">
+				<option value="">Default (provider-based)</option>
+				<option value="@OperatingMode.PlugAndPlay">Plug-and-play</option>
+				<option value="@OperatingMode.Hybrid">Hybrid</option>
+				<option value="@OperatingMode.Explicit">Explicit</option>
+			</select>
+		</label>
+	</div>
+</div>
+
+@code {
+
+	/// <summary>
+	/// The backend whose settings are rendered. The component binds directly to the options the page
+	/// supplies; the page is responsible for handing in the current draft instance.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public DesiredBackend Backend { get; set; } = null!;
+
+	/// <summary>
+	/// The provider descriptors the page's catalog publishes. The component is intentionally agnostic about
+	/// which catalog implementation is in use: it renders whatever the page supplies, so a future catalog
+	/// swap does not require touching this file.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public IReadOnlyList<ProviderDescriptor> Providers { get; set; } = null!;
+
+	/// <summary>
+	/// Whether the page is currently busy with a load or apply. Mirrored to every interactive control so the
+	/// editor disables itself as a whole.
+	/// </summary>
+	[Parameter]
+	public bool IsBusy { get; set; }
+
+	/// <summary>
+	/// Fired when the operator picks a different provider type. The page handles the "switch provider → refill
+	/// base URL with the new provider's default if the current URL is blank or still matches the old default"
+	/// side effect and triggers a re-render so the reconciliation table and mode badge refresh. Using
+	/// <see cref="EventCallback{T}"/> ensures Blazor re-renders the parent page, not just this component.
+	/// </summary>
+	[Parameter]
+	public EventCallback<string?> OnProviderTypeChanged { get; set; }
+
+	/// <summary>
+	/// Fired when the operator picks a different operating mode. The page uses this to write the new mode and
+	/// trigger a re-render, so the reconciliation table refreshes against the new mode. Using
+	/// <see cref="EventCallback{T}"/> (rather than a direct <c>@bind="Backend.Options.Mode"</c> on a POCO
+	/// property) is what causes Blazor to re-render the parent page. A bare <c>@bind</c> on a POCO property
+	/// without change notification only re-renders the component that owns the binding, leaving the
+	/// page-level reconciliation stale. The cast in the markup is defensive: Blazor's @bind:set for a nullable
+	/// enum can deliver a null or a string depending on the option set, and we coerce to a nullable
+	/// <see cref="OperatingMode"/> before firing the callback.
+	/// </summary>
+	[Parameter]
+	public EventCallback<OperatingMode?> OnModeChanged { get; set; }
+
+	/// <summary>
+	/// Fired after the operator edits one of the plain-bound fields (name, base URL, API key). Those fields use
+	/// a bare <c>@bind</c> on a POCO property, which by itself only re-renders this component and leaves the
+	/// page-level dirty state stale. Invoking this callback (via <c>@bind:after</c>) re-renders the parent page
+	/// so its Apply/Discard gate and unsaved-changes guard re-evaluate. Provider and Mode do not use this
+	/// callback because their <c>@bind:set</c> handlers already bubble to the page.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnConfigurationChanged { get; set; }
+
+	/// <summary>
+	/// Notifies the page that a plain-bound field changed so it can re-evaluate its dirty state.
+	/// </summary>
+	/// <returns>A task that completes when the parent has been notified.</returns>
+	private Task NotifyChanged() => OnConfigurationChanged.InvokeAsync();
+
+	/// <summary>
+	/// Gets the placeholder shown in the API-key field. An existing backend shows a "saved secret" hint (the
+	/// field is blank by the write-only contract, and leaving it blank keeps the saved key); a newly added
+	/// backend shows that a key is required.
+	/// </summary>
+	/// <param name="backend">The backend whose API-key field is being rendered.</param>
+	/// <returns>The placeholder text for the field.</returns>
+	private static string ApiKeyPlaceholder(DesiredBackend backend) => backend.OriginalName is null ? "Required" : "•••• saved — leave blank to keep";
+
+}
