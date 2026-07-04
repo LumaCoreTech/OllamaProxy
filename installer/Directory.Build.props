@@ -43,6 +43,26 @@
 	</PropertyGroup>
 
 	<!--
+		On a non-Windows host the .NET SDK cannot find the .NET Framework reference assemblies locally
+		(they ship only with the Windows targeting packs), so it implicitly adds a PackageReference to
+		Microsoft.NETFramework.ReferenceAssemblies that already carries its own version. Under Central
+		Package Management that implicit, versioned reference collides with the PackageVersion for the
+		same package in Directory.Packages.props and fails restore with NU1009 — the Linux CI leg only.
+		These net472 projects compile nothing there (NoBuild, sources removed, every PackageReference
+		gated behind IsWindowsHost), so the reference assemblies are not needed.
+
+		AutomaticallyUseReferenceAssemblyPackages is the SDK switch that specifically governs this implicit
+		injection: setting it false stops the SDK from adding the package, which removes the CPM conflict
+		and keeps `dotnet restore OllamaProxy.slnx` green on Linux. (DisableImplicitFrameworkReferences does
+		NOT gate this particular package, so it cannot fix NU1009 here.) On Windows the targeting pack is
+		present, the SDK adds no implicit package regardless, and the explicit Windows-only reference (with
+		its central PackageVersion) is used exactly as before.
+	-->
+	<PropertyGroup Condition="'$(IsWindowsHost)' != 'true'">
+		<AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
+	</PropertyGroup>
+
+	<!--
 		WiX Toolset v7 ships under the Open Source Maintenance Fee (OSMF). Building requires accepting
 		its EULA, which the WiX targets check by looking for "wix7" in the AcceptEula property (see
 		WixToolset.Dtf.CustomAction's CheckLicenseAcceptance.targets, error WIX7015).
