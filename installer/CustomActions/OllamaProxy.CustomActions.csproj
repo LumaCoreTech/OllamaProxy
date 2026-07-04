@@ -17,21 +17,25 @@
 		IsWindowsHost guard from installer/Directory.Build.props, so the solution still builds there.
 	-->
 
-    <PropertyGroup>
-        <TargetFramework>net472</TargetFramework>
-        <LangVersion>latest</LangVersion>
-        <Nullable>disable</Nullable>
-        <ImplicitUsings>disable</ImplicitUsings>
-        <GenerateDocumentationFile>false</GenerateDocumentationFile>
-        <RootNamespace>OllamaProxy.CustomActions</RootNamespace>
-        <AssemblyName>OllamaProxy.CustomActions</AssemblyName>
-
-        <!--
-			On a non-Windows host, skip the actual compile/packaging. TargetFrameworks is emptied so the
-			SDK produces nothing and MakeSfxCA (Windows-only) is never invoked.
+	<PropertyGroup>
+		<!--
+			net472 on Windows — the framework the custom action ships on and that MakeSfxCA wraps. On a
+			non-Windows host (the Linux CI leg) the project retargets to net10.0: its sources are removed
+			below, so it builds as an empty assembly that keeps `dotnet build OllamaProxy.slnx` green there
+			without the Windows-only .NET Framework reference assemblies or MakeSfxCA. A buildable TFM is
+			used rather than NoBuild, which fails `dotnet build` outright with NETSDK1085 (the Build target
+			may not be invoked while NoBuild is set). net10.0 also targets no .NET Framework, so the SDK
+			injects no implicit reference-assembly package and restore stays clean under CPM.
 		-->
-        <NoBuild Condition="'$(IsWindowsHost)' != 'true'">true</NoBuild>
-    </PropertyGroup>
+		<TargetFramework Condition="'$(IsWindowsHost)' == 'true'">net472</TargetFramework>
+		<TargetFramework Condition="'$(IsWindowsHost)' != 'true'">net10.0</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<Nullable>disable</Nullable>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<RootNamespace>OllamaProxy.CustomActions</RootNamespace>
+		<AssemblyName>OllamaProxy.CustomActions</AssemblyName>
+	</PropertyGroup>
 
     <!--
 		Build everything below only on Windows. The Condition on the ItemGroups keeps the project file

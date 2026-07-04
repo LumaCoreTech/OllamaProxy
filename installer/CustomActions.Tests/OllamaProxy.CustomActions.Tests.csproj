@@ -12,13 +12,23 @@
 		internal helpers relies on the InternalsVisibleTo entry in the custom-action project.
 
 		Windows-only: the custom action neutralizes to a no-op on a non-Windows host (the Linux CI leg),
-		so there is nothing to test there. This project mirrors that neutralization (no test SDK, NoBuild,
-		sources excluded) so `dotnet build`/`dotnet test OllamaProxy.slnx` stays green on Linux and runs
-		the tests on Windows.
+		so there is nothing to test there. This project mirrors that neutralization (no test SDK, sources
+		excluded, retargeted to net10.0) so `dotnet build`/`dotnet test OllamaProxy.slnx` stays green on
+		Linux and runs the tests on Windows.
 	-->
 
 	<PropertyGroup>
-		<TargetFramework>net472</TargetFramework>
+		<!--
+			net472 on Windows — the same framework the custom action ships on, so the pure helpers are
+			tested on exactly the runtime they run under. On a non-Windows host (the Linux CI leg) the
+			project retargets to net10.0: its sources are removed below, so it builds as an empty assembly
+			that keeps `dotnet build OllamaProxy.slnx` green there. A buildable TFM is used rather than
+			NoBuild, which fails `dotnet build` outright with NETSDK1085 (the Build target may not be
+			invoked while NoBuild is set). net10.0 also targets no .NET Framework, so the SDK injects no
+			implicit reference-assembly package and restore stays clean under CPM.
+		-->
+		<TargetFramework Condition="'$(IsWindowsHost)' == 'true'">net472</TargetFramework>
+		<TargetFramework Condition="'$(IsWindowsHost)' != 'true'">net10.0</TargetFramework>
 		<LangVersion>latest</LangVersion>
 		<Nullable>disable</Nullable>
 		<ImplicitUsings>disable</ImplicitUsings>
@@ -29,12 +39,6 @@
 
 		<!-- Only a test project on Windows; on Linux it neutralizes, so `dotnet test` skips it there. -->
 		<IsTestProject Condition="'$(IsWindowsHost)' == 'true'">true</IsTestProject>
-
-		<!--
-			On a non-Windows host, skip the actual compile (mirrors the custom-action project). With no
-			sources and no package references, the SDK produces nothing and the solution still builds.
-		-->
-		<NoBuild Condition="'$(IsWindowsHost)' != 'true'">true</NoBuild>
 	</PropertyGroup>
 
 	<!--
