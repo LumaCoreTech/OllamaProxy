@@ -78,3 +78,34 @@ project and are listed here for completeness:
 
 All Microsoft packages are licensed under the **MIT License**.
 See <https://github.com/dotnet/runtime/blob/main/LICENSE.TXT> for details.
+
+---
+
+## Installer Tooling
+
+The following components are used only to **build the Windows MSI installer** (under
+[`installer/`](installer/)). They are build-time tooling: they are **not** linked into, distributed
+with, or required by the OllamaProxy application itself.
+
+### WiX Toolset (v7)
+
+- **Author:** WiX Toolset team and contributors (.NET Foundation)
+- **License:** Microsoft Reciprocal License (MS-RPL)
+- **URL:** <https://github.com/wixtoolset/wix>
+- **Usage:** Build-time only. Compiles the MSI package (`WixToolset.Sdk`), the standard UI dialog
+  set (`WixToolset.UI.wixext`), and the secured-folder / service-configuration helpers
+  (`WixToolset.Util.wixext`). The managed custom actions are authored against the WiX DTF libraries
+  (`WixToolset.Dtf.CustomAction`, `WixToolset.Dtf.WindowsInstaller`) and wrapped by MakeSfxCA.
+
+> **Open Source Maintenance Fee (OSMF):** WiX v7 is distributed under the OSMF EULA. The fee applies
+> only to users employing the toolset in revenue-generating activities with annual gross revenue at
+> or above US$10,000; non-commercial use is exempt. See <https://wixtoolset.org/osmf/>.
+
+### Microsoft.NETFramework.ReferenceAssemblies
+
+- **Author:** Microsoft
+- **License:** MIT
+- **URL:** <https://github.com/microsoft/dotnet>
+- **Usage:** Build-time only. Supplies the .NET Framework 4.7.2 reference assemblies the installer's
+  custom-action project compiles against (the Windows Installer custom-action host runs on the .NET
+  Framework).

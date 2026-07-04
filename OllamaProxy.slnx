@@ -22,6 +22,19 @@
   <Folder Name="/build.net/.github/instructions/">
     <File Path="build.net/.github/instructions/base.instructions.md" />
   </Folder>
+  <Folder Name="/installer/">
+    <File Path="installer/Directory.Build.props" />
+    <File Path="installer/Directory.Packages.props" />
+    <!-- Solution member for IDE visibility, but excluded from every solution build configuration: it harvests a win-x64 publish that does not exist until the app is explicitly published, and the WiX SDK is Windows-only. The MSI is built explicitly on the Windows CI/release legs after publish (see .github/workflows). -->
+    <Project Path="installer/OllamaProxy.Installer.wixproj" Type="b7dd6f7e-def8-4e67-b5b7-07ef123db6f0">
+      <Platform Project="x64" />
+      <Build Project="false" />
+    </Project>
+  </Folder>
+  <Folder Name="/installer/CustomActions/">
+    <Project Path="installer/CustomActions.Tests/OllamaProxy.CustomActions.Tests.csproj" />
+    <Project Path="installer/CustomActions/OllamaProxy.CustomActions.csproj" />
+  </Folder>
   <Folder Name="/Repository Files/">
     <File Path=".dockerignore" />
     <File Path=".editorconfig" />
@@ -39,6 +52,7 @@
     <File Path="src/xunit.runner.json" />
     <File Path="THIRD-PARTY-NOTICES.md" />
   </Folder>
+  <Project Path="docs/Docs.csproj" />
   <Project Path="src/OllamaProxy.Tests/OllamaProxy.Tests.csproj" />
   <Project Path="src/OllamaProxy/OllamaProxy.csproj" />
 </Solution>

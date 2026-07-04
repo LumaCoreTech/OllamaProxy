@@ -114,3 +114,75 @@ jobs:
         echo ""
         echo "🐳 Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}"
         echo "🚀 GitHub Release: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.get_version.outputs.VERSION }}"
+
+  # ==========================================================================
+  # Build the Windows MSI installer and attach it to the GitHub Release.
+  #
+  # Runs on Windows because the installer embeds a net472 DTF custom action
+  # (MakeSfxCA is Windows-only). Depends on the release job so the GitHub
+  # Release already exists before we upload the asset to it.
+  # ==========================================================================
+  installer:
+    name: Build & Attach Windows Installer
+    needs: release
+    runs-on: windows-latest
+
+    permissions:
+      contents: write   # upload the MSI asset to the Release
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0  # full history so MinVer can resolve the version
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Get Version from Tag
+      id: get_version
+      shell: bash
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Installer version: $VERSION"
+
+    # ------------------------------------------------------------------------
+    # Publish the self-contained win-x64 app the installer harvests.
+    # ------------------------------------------------------------------------
+    - name: Publish self-contained app
+      run: >-
+        dotnet publish src/OllamaProxy/OllamaProxy.csproj
+        -c Release -p:PublishProfile=win-x64
+
+    # ------------------------------------------------------------------------
+    # Build the MSI. The version from the tag is stamped into ProductVersion;
+    # PublishDir points at the publish output produced above.
+    # ------------------------------------------------------------------------
+    - name: Build installer
+      run: >-
+        dotnet build installer/OllamaProxy.Installer.wixproj
+        -c Release -p:Platform=x64
+        -p:ProductVersion=${{ steps.get_version.outputs.VERSION }}
+
+    - name: Stage MSI with versioned name
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path dist | Out-Null
+        Copy-Item artifacts/installer/OllamaProxy.Installer/bin/x64/Release/OllamaProxy.msi `
+          "dist/OllamaProxy-${{ steps.get_version.outputs.VERSION }}-x64.msi"
+
+    - name: Attach MSI to the GitHub Release
+      uses: softprops/action-gh-release@v3
+      with:
+        files: dist/OllamaProxy-${{ steps.get_version.outputs.VERSION }}-x64.msi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Installer Summary
+      shell: bash
+      run: |
+        echo "✅ Windows installer attached to release ${{ steps.get_version.outputs.VERSION }}"
+        echo "📦 Asset: OllamaProxy-${{ steps.get_version.outputs.VERSION }}-x64.msi"

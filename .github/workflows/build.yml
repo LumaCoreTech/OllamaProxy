@@ -62,6 +62,34 @@ jobs:
         fail-on-error: true
 
     # ────────────────────────────────────────────────────────────────────────
+    # Installer smoke build (Windows only). Verifies the WiX project, the DTF
+    # custom action, and the harvest still compile into an MSI on every change.
+    # The installer is not part of OllamaProxy.slnx (it embeds a Windows-only
+    # net472 custom action), so it is built explicitly here after a self-
+    # contained publish provides the payload to harvest.
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Publish self-contained app (installer payload)
+      if: matrix.os == 'windows-latest'
+      run: >-
+        dotnet publish src/OllamaProxy/OllamaProxy.csproj
+        -c Release -p:PublishProfile=win-x64
+
+    - name: Build installer
+      if: matrix.os == 'windows-latest'
+      run: >-
+        dotnet build installer/OllamaProxy.Installer.wixproj
+        -c Release -p:Platform=x64
+
+    - name: Upload installer artifact
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v7
+      with:
+        name: installer-msi
+        path: artifacts/installer/OllamaProxy.Installer/bin/x64/Release/OllamaProxy.msi
+        retention-days: 7
+        if-no-files-found: error
+
+    # ────────────────────────────────────────────────────────────────────────
     # Badge generation (main branch only). Each matrix leg produces its own
     # test + coverage badge JSON, uploaded as a per-OS artifact for the
     # badge-update workflow to publish to the 'badges' branch.

@@ -13,6 +13,9 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
+## Artifacts
+artifacts/
+
 ## Visual Studio / Rider / VS Code
 .vs/
 .vscode/
@@ -38,12 +41,16 @@ TestResults/
 packages/
 !packages/build/
 
-## OllamaProxy: runtime-generated effective configuration
-# The proxy writes its fully-resolved configuration here on startup when
-# WriteEffectiveConfig is enabled. It may contain plaintext secrets (those that
-# came from appsettings, not from environment variables), so it must never be committed.
-appsettings.generated.json
-**/appsettings.generated.json
+## OllamaProxy: operator working copy (live config)
+# appsettings.json is the LIVE operator configuration the admin UI rewrites at runtime; it
+# holds real backend URLs and plaintext API keys, so it must never be committed. The tracked,
+# never-loaded appsettings.reference.json is the annotated manual and factory-reset baseline
+# (a different filename, so the rules below do not match it — it stays under version control).
+# appsettings.Development.json is the historical dev override and is ignored for the same reason.
+appsettings.json
+**/appsettings.json
+appsettings.Development.json
+**/appsettings.Development.json
 
 ## Local development overrides that may contain secrets
 appsettings.Local.json
@@ -57,3 +64,7 @@ secrets.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+## WiX installer build output
+*.wixpdb
+*.wixobj

@@ -21,18 +21,19 @@ services:
     ports:
       # Expose the proxy on the conventional Ollama port on the host.
       - "11434:11434"
+      # Expose the admin UI to the local host only, matching the default non-container bind.
+      - "127.0.0.1:11435:11435"
     environment:
-      # --- Operating mode -------------------------------------------------
-      OllamaProxy__Mode: "PlugAndPlay"
-
-      # --- Backend: target an OpenAI-compatible API -----------------------
-      OllamaProxy__Backends__default__BaseUrl: "https://api.openai.com/v1"
-      OllamaProxy__Backends__default__ProviderType: "openai"
-      OllamaProxy__Backends__default__AutoExpose: "true"
+      # --- Backend: target OpenRouter (OpenAI-compatible, rich metadata) ---
+      # OpenRouter advertises model capabilities in its listing, so PlugAndPlay
+      # publishes a complete, accurate catalog on the first run without probing.
+      OllamaProxy__Backends__default__BaseUrl: "https://openrouter.ai/api/v1"
+      OllamaProxy__Backends__default__ProviderType: "openrouter"
+      OllamaProxy__Backends__default__Mode: "PlugAndPlay"
 
       # --- Secret: never bake this into the image -------------------------
       # Resolved from the host environment / .env file (see below).
-      OllamaProxy__Backends__default__ApiKey: "${OPENAI_API_KEY:?Set OPENAI_API_KEY in your .env file}"
+      OllamaProxy__Backends__default__ApiKey: "${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in your .env file}"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:11434/health"]
       interval: 30s

@@ -5,6 +5,10 @@
 # Generated effective configuration may contain resolved secrets; keep it out.
 **/appsettings.generated.json
 
+# Operator working copy holds real backend URLs and API keys; the container gets its
+# backend via environment variables instead, so this must never enter the image.
+**/appsettings.json
+
 # Local development overrides.
 **/appsettings.Development.json
 
