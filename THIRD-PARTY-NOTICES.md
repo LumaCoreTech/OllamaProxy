@@ -43,6 +43,13 @@ and the respective package licenses on [nuget.org](https://www.nuget.org/).
 - **URL:** <https://github.com/coverlet-coverage/coverlet>
 - **Usage:** Test-only. Collects code coverage during `dotnet test`.
 
+#### coverlet.msbuild
+
+- **Author:** Toni Solarin-Sodara and the coverlet-coverage Contributors
+- **License:** MIT
+- **URL:** <https://github.com/coverlet-coverage/coverlet>
+- **Usage:** Test-only. Provides MSBuild-integrated code coverage during `dotnet test`.
+
 #### Microsoft.Extensions.Http.Resilience
 
 - **Author:** Microsoft
