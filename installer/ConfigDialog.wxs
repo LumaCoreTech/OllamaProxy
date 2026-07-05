@@ -31,7 +31,8 @@
             elevated WriteAppSettings action.
         -->
         <Property Id="OLLAMAPROXY_BASEURL" Value="https://api.openai.com/v1" Secure="yes" />
-        <Property Id="OLLAMAPROXY_APIKEY" Secure="yes" />
+        <!-- Hidden="yes" keeps the empty-then-user-supplied key out of verbose MSI logs (see MsiHiddenProperties note below). -->
+        <Property Id="OLLAMAPROXY_APIKEY" Secure="yes" Hidden="yes" />
         <Property Id="OLLAMAPROXY_PROVIDERTYPE" Value="openai" Secure="yes" />
         <Property Id="OLLAMAPROXY_TESTRESULT" Value="{}" Secure="yes" />
         <Property Id="OLLAMAPROXY_TESTOK" Value="0" Secure="yes" />
@@ -57,12 +58,16 @@
 
         <!--
             Keep the API key out of verbose MSI logs (msiexec /l*v). Secure="yes" lets the key cross the
-            UI-to-execute boundary but does NOT redact it from the log; MsiHiddenProperties does. Both names
-            are listed: OLLAMAPROXY_APIKEY is the raw property, and WriteAppSettings is the deferred action's
-            CustomActionData (which embeds the key, marshaled by the SetWriteAppSettings type-51 action),
-            whose value MSI would otherwise echo in a "PROPERTY CHANGE" log line.
+            UI-to-execute boundary but does NOT redact it from the log; hiding the property does. In WiX v4+
+            the special MsiHiddenProperties property cannot be authored directly (WIX0070) — instead each
+            property carries Hidden="yes", which the toolset aggregates into MsiHiddenProperties. Two names
+            need hiding: OLLAMAPROXY_APIKEY is the raw property (Hidden set on its declaration above), and
+            WriteAppSettings is the deferred action's CustomActionData (which embeds the key, marshaled by
+            the SetWriteAppSettings type-51 action), whose value MSI would otherwise echo in a
+            "PROPERTY CHANGE" log line. It has no natural Property element, so this valueless declaration
+            exists solely to carry Hidden="yes".
         -->
-        <Property Id="MsiHiddenProperties" Value="OLLAMAPROXY_APIKEY;WriteAppSettings" />
+        <Property Id="WriteAppSettings" Hidden="yes" />
 
         <!-- The managed custom-action assembly embedded by the wixproj ProjectReference. -->
         <Binary Id="OllamaProxyCA" SourceFile="$(var.CADir)OllamaProxy.CustomActions.CA.dll" />
