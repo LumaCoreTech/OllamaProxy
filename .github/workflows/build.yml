@@ -135,29 +135,31 @@ jobs:
         # Aggregate counters across every TRX file produced by the run.
         $trxFiles = Get-ChildItem -Path . -Filter "test-results.trx" -Recurse -ErrorAction SilentlyContinue
         $total = 0
+        $executed = 0
         $passed = 0
-        $skipped = 0
         foreach ($f in $trxFiles) {
           try {
             [xml]$trx = Get-Content $f.FullName
             $counters = $trx.TestRun.ResultSummary.Counters
-            $total   += [int]$counters.total
-            $passed  += [int]$counters.passed
-            # notExecuted = tests that were skipped (e.g. [Fact(Skip=...)] or a
-            # gated-off live test), NOT failures — tracked so they can be excluded
-            # from the red/green verdict below.
-            $skipped += [int]$counters.notExecuted
+            $total    += [int]$counters.total
+            # xUnit's VSTest TRX logger reports skipped tests ONLY as the gap between
+            # 'total' and 'executed' — it leaves 'notExecuted' at 0. So skipped must be
+            # DERIVED as total - executed below, never read from a 'notExecuted' counter.
+            $executed += [int]$counters.executed
+            $passed   += [int]$counters.passed
           } catch {
             Write-Host "::warning::Failed to parse $($f.FullName): $_"
           }
         }
 
         if ($total -gt 0) {
-          # Failures are everything that neither passed nor was skipped: assertion
-          # failures AND fixture/setup errors (which TRX counts as 'error', not
-          # 'failed'), so a setup blow-up still turns the badge red. Skipped tests
-          # are deliberately excluded — a gated-off live test is not a failure.
-          $failed = $total - $passed - $skipped
+          # Skipped = discovered but not run (gated-off live tests, [Fact(Skip=...)]).
+          $skipped = $total - $executed
+          # Failures = anything that ran but did not pass: assertion failures AND
+          # fixture/setup errors (TRX counts those as 'error', which still sit inside
+          # 'executed'), so a setup blow-up turns the badge red. Skipped tests are
+          # excluded by construction — they are not part of 'executed'.
+          $failed = $executed - $passed
           $color = if ($failed -eq 0) { "brightgreen" } elseif ($failed -lt 3) { "yellow" } else { "red" }
 
           $parts = @("$passed passed")

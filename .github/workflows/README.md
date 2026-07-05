@@ -90,9 +90,12 @@ reflects reality instead of freezing on the last green run:
   step in the leg — restore, build, test, or the Windows installer smoke build — failed.
 - If restore/build fails before any test runs (no TRX), the test badge is written as a red
   **`build failed`**.
-- The test badge's red/green verdict counts only genuine failures (`total − passed − skipped`), so
-  **skipped** tests — such as gated-off live tests — never turn it red; the skip count is still shown
-  in the message (e.g. `799 passed, 12 skipped`) for transparency.
+- The test badge's red/green verdict counts only genuine failures. xUnit's TRX logger reports skipped
+  tests as the gap between the `total` and `executed` counters (it leaves `notExecuted` at `0`), so the
+  badge derives `skipped = total − executed` and `failed = executed − passed`. **Skipped** tests — such
+  as gated-off live tests — are excluded by construction and never turn it red, while fixture/setup
+  errors stay inside `executed` and still count as failures. The skip count is shown in the message
+  (e.g. `719 passed, 12 skipped`) for transparency.
 - If no coverage is collected, the coverage badge is written as a red **`unavailable`** (and
   `reportgenerator` is skipped entirely rather than erroring on a missing report).
 - `Upload Badge Data` uses `if-no-files-found: warn`, so a missing artifact is loud in the logs.
