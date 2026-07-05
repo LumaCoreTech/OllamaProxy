@@ -36,6 +36,14 @@ and the respective package licenses on [nuget.org](https://www.nuget.org/).
 
 ### NuGet Packages
 
+#### bUnit
+
+- **Author:** Egil Hansen and the bUnit Contributors
+- **License:** MIT
+- **URL:** <https://github.com/bUnit-dev/bUnit>
+- **Usage:** Test-only. Renders the Admin Blazor components in-process (no browser) for
+  component unit tests.
+
 #### coverlet.collector
 
 - **Author:** Toni Solarin-Sodara and the coverlet-coverage Contributors

@@ -255,8 +255,8 @@ public sealed class DesiredStateMaterializerTests
 
 	/// <summary>
 	/// Verifies that <see cref="DesiredStateMaterializer.Materialize"/> produces an empty backend map for a draft
-	/// with no backends — the degenerate case of an operator assembling a configuration from scratch. The
-	/// recycle's dry-run, not the materializer, rejects a commit with no backends.
+	/// with no backends — the degenerate case of an operator assembling a configuration from scratch, which is a
+	/// valid state: the proxy starts with no models until a backend is added.
 	/// </summary>
 	[Fact]
 	public void Materialize_WhenNoBackends_ProducesEmptyMap()

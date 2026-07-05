@@ -19,11 +19,22 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<PackageReference Include="bunit" />
 		<PackageReference Include="coverlet.collector" />
 		<PackageReference Include="coverlet.msbuild" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" />
 		<PackageReference Include="xunit" />
 		<PackageReference Include="xunit.runner.visualstudio" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!--
+			bUnit renders the Admin Blazor components in-process (no browser). Rendering Razor components pulls in
+			the ASP.NET Core component types, which are part of the shared framework and are not flowed transitively
+			through the ProjectReference to the Web-SDK main project, so the test project references the framework
+			directly.
+		-->
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 
 	<ItemGroup>

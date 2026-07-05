@@ -3,6 +3,7 @@
 		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
 	</PropertyGroup>
 	<ItemGroup>
+		<PackageVersion Include="bunit" Version="2.7.2" />
 		<PackageVersion Include="coverlet.collector" Version="6.0.4" />
 		<PackageVersion Include="coverlet.msbuild" Version="6.0.4" />
 		<PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.8" />

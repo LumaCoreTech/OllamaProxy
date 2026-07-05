@@ -273,33 +273,11 @@
 	/// editor blocks Apply on them client-side rather than letting the call throw. Domain rules (URL shape, key
 	/// length, …) are left to the recycle's dry-run, which reports them as a graceful rejection.
 	/// </summary>
-	private string? StructuralError
-	{
-		get
-		{
-			if (mDraft is null || mDraft.Backends.Count == 0)
-			{
-				// An empty configuration is not a structural key collision; the dry-run rejects it gracefully as
-				// "at least one backend is required", so Apply stays enabled to surface that as a normal rejection.
-				return null;
-			}
-
-			if (mDraft.Backends.Any(backend => string.IsNullOrWhiteSpace(backend.Name)))
-			{
-				return "Every backend needs a non-blank name.";
-			}
-
-			List<string> duplicates = mDraft.Backends
-				.GroupBy(backend => backend.Name.Trim(), StringComparer.OrdinalIgnoreCase)
-				.Where(group => group.Count() > 1)
-				.Select(group => group.Key)
-				.ToList();
-
-			return duplicates.Count > 0
-				       ? $"Backend names must be unique. Duplicated: {string.Join(", ", duplicates)}."
-				       : null;
-		}
-	}
+	/// <remarks>
+	/// The rule itself lives in <see cref="DesiredStateStructuralValidator"/> so it can be unit-tested without
+	/// rendering this page; this property just forwards the current draft to it.
+	/// </remarks>
+	private string? StructuralError => DesiredStateStructuralValidator.Validate(mDraft);
 
 	/// <summary>
 	/// Loads the editable draft when the page is initialized.

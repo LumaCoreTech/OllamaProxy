@@ -35,8 +35,9 @@ public sealed class DesiredProxyState
 	/// <summary>
 	/// Gets the backends the operator is editing, in editor (render) order. Adding an entry stages a new backend,
 	/// and removing one stages a deletion. Both take effect only when the desired state is applied. The list may
-	/// be empty while the operator assembles a configuration from scratch. A commit with no backends is still
-	/// rejected by the recycle's dry-run, which requires at least one backend.
+	/// be empty while the operator assembles a configuration from scratch, and an empty list is a valid
+	/// configuration in its own right: it materializes to an empty <see cref="ProxyOptions.Backends"/> map and the
+	/// proxy simply starts with no models until a backend is added.
 	/// </summary>
 	public IList<DesiredBackend> Backends { get; init; } = new List<DesiredBackend>();
 
