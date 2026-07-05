@@ -37,6 +37,24 @@ sealed partial class FileRequestTraceSink : IRequestTraceSink
 		Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
 	};
 
+	/// <summary>
+	/// File-name characters treated as invalid on <em>every</em> supported operating system so that trace
+	/// file names stay portable between the host that writes them and the host that later reads them: the 32
+	/// ASCII control characters (<c>U+0000</c>–<c>U+001F</c>) plus the punctuation Windows reserves
+	/// (<c>" &lt; &gt; | : * ? \ /</c>). The host-dependent <see cref="Path.GetInvalidFileNameChars"/> is
+	/// deliberately avoided: on Unix it reports only <c>\0</c> and <c>/</c> as invalid, so a Kestrel id such
+	/// as <c>{connectionId}:{request}</c> would keep its <c>:</c> — a name that is legal on Linux but illegal
+	/// the moment the same trace bundle is opened on Windows.
+	/// </summary>
+	private static readonly char[] InvalidFileNameChars =
+	[
+		// U+0000..U+001F — the ASCII control range, illegal in a file name on every OS.
+		.. Enumerable.Range(0, 0x20).Select(static code => (char)code),
+
+		// Punctuation Windows additionally reserves; a strict superset of the Unix-forbidden set.
+		'"', '<', '>', '|', ':', '*', '?', '\\', '/'
+	];
+
 	private readonly string                        mDirectory;
 	private readonly int                           mMaxFiles;
 	private readonly ILogger<FileRequestTraceSink> mLogger;
@@ -121,18 +139,18 @@ sealed partial class FileRequestTraceSink : IRequestTraceSink
 	}
 
 	/// <summary>
-	/// Replaces every character that is invalid in a file name with an underscore, so a correlation id
-	/// carrying a path separator or other reserved character (Kestrel's <c>:</c> between connection and
-	/// request, for instance) still yields a valid, collision-stable file name.
+	/// Replaces every character invalid in a file name — see <see cref="InvalidFileNameChars"/>, a fixed
+	/// OS-independent set — with an underscore, so a correlation id carrying a reserved character (Kestrel's
+	/// <c>:</c> between connection and request, for instance) yields a name that is valid and collision-stable
+	/// on every operating system, not merely on the one that wrote the trace.
 	/// </summary>
 	/// <param name="value">The correlation id to sanitize.</param>
 	/// <returns>The id with every invalid file-name character replaced by an underscore.</returns>
 	private static string SanitizeForFileName(string value)
 	{
-		char[] invalid = Path.GetInvalidFileNameChars();
-		return value.IndexOfAny(invalid) < 0 ? value : string.Concat(value.Select(Replace));
+		return value.IndexOfAny(InvalidFileNameChars) < 0 ? value : string.Concat(value.Select(Replace));
 
-		char Replace(char candidate) => Array.IndexOf(invalid, candidate) < 0 ? candidate : '_';
+		static char Replace(char candidate) => Array.IndexOf(InvalidFileNameChars, candidate) < 0 ? candidate : '_';
 	}
 
 	/// <summary>
