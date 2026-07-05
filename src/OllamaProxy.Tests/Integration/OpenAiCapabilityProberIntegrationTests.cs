@@ -873,10 +873,20 @@ public sealed class OpenAiCapabilityProberIntegrationTests
 		// Act: start the tool probe; it earns the 429 and publishes a backend-wide cooldown.
 		Task<bool?> toolProbe = sut.ProbeToolSupportAsync(backend, ModelId, CancellationToken.None);
 
-		// Wait until the backend has answered the tool probe with the throttle, then give the prober a beat to
-		// publish the shared cooldown before the innocent sibling starts its own attempt.
+		// The throttle is signalled from INSIDE the handler as the 429 is built — before that response has
+		// propagated back through the prober to publish the shared cooldown. Sleeping a fixed span here and
+		// hoping publication has happened is exactly what made this test flaky under CI load (the sibling read
+		// an empty store and fired at 0 ms). Instead, wait on the prober's own cooldown view until the 429 has
+		// actually been shared. The bounded wait keeps a real regression — a cooldown that is never published —
+		// fast to fail instead of hanging.
 		await handler.ToolThrottled;
-		await Task.Delay(150);
+		var cooldownPublished = Stopwatch.StartNew();
+		while (!sut.HasActiveBackendCooldown(backend.Name) && cooldownPublished.Elapsed < TimeSpan.FromSeconds(5))
+			await Task.Delay(10);
+
+		Assert.True(
+			sut.HasActiveBackendCooldown(backend.Name),
+			"The tool probe's 429 never published a shared backend cooldown for the sibling to observe.");
 
 		// The vision probe never receives a 429 and the configured base backoff is zero, so the ONLY thing that
 		// can delay it is the cooldown the tool probe published.

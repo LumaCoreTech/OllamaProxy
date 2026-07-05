@@ -408,6 +408,26 @@ sealed class OpenAiCapabilityProber : ICapabilityProber
 	}
 
 	/// <summary>
+	/// Indicates whether the given backend currently has an active shared rate-limit cooldown — one a sibling
+	/// probe published after hitting a rate limit whose deadline has not yet passed. Wraps
+	/// <see cref="GetRemainingBackendCooldown"/> and reads the same store the retry loop consults, so it
+	/// reflects exactly what <see cref="WaitOutBackendCooldownAsync"/> would honor at this instant.
+	/// </summary>
+	/// <param name="backendName">The backend whose shared cooldown is checked.</param>
+	/// <returns>
+	/// <see langword="true"/> when a cooldown for the backend is still in the future; otherwise
+	/// <see langword="false"/> (none was ever published, or it has already elapsed).
+	/// </returns>
+	/// <remarks>
+	/// Exposed as <see langword="internal"/> purely as a test-observability hook: the shared-cooldown test
+	/// awaits the actual publication of a cooldown through this method instead of sleeping for a fixed span,
+	/// removing the scheduling race between a sibling probe earning an HTTP 429 and the innocent sibling
+	/// reading the resulting cooldown. It exposes no state a caller could mutate.
+	/// </remarks>
+	internal bool HasActiveBackendCooldown(string backendName) =>
+		GetRemainingBackendCooldown(backendName) > TimeSpan.Zero;
+
+	/// <summary>
 	/// Reads a throttling response's <c>Retry-After</c> header into a positive, ceiling-clamped wait. The
 	/// header comes in two RFC 9110 shapes: a delta in seconds (<c>Retry-After: 30</c>) or an HTTP date
 	/// (<c>Retry-After: Wed, 21 Oct 2025 07:28:00 GMT</c>). <see cref="System.Net.Http.Headers"/> surfaces
