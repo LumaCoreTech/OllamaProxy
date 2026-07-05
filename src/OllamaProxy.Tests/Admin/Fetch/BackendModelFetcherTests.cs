@@ -13,23 +13,32 @@ using OllamaProxy.Providers.Abstractions;
 
 namespace OllamaProxy.Tests.Admin.Fetch;
 
-// Backend model fetch: one backend's models, or an honestly classified failure.
-//
-// BackendModelFetcher exposes two fetch shapes, and this file covers both (one #region each):
-//
-//   - FetchAsync() buffers the whole batch and returns the outcome as a BackendFetchResult. A failure becomes
-//     a classified failure value, never an exception, apart from the two control-flow signals noted below.
-//
-//   - FetchStreamingAsync() yields each model as it resolves. Once it has begun yielding it cannot fold a late
-//     failure back into a result, so a fault surfaces as a thrown BackendFetchException instead.
-//
-// Both paths share one spine. They resolve through the draft path (the only path that works on the client-less
-// chassis), forward the caller's probe policy to discovery unchanged, and classify failures honestly: 401/403
-// is Authentication, any other upstream status is Upstream, and anything unattributable is Unknown. Both also
-// let the same two signals escape rather than swallow them: a cancellation through the caller's token, and an
-// argument-guard violation.
-//
-// For the scenario-by-scenario story of each method, see its #region below.
+/// <summary>
+/// Tests for <see cref="BackendModelFetcher"/>: one backend's models, or an honestly classified failure.
+/// </summary>
+/// <remarks>
+/// <see cref="BackendModelFetcher"/> exposes two fetch shapes, and this file covers both (one #region each):
+/// <list type="bullet">
+///     <item>
+///         <description>
+///         <c>FetchAsync()</c> buffers the whole batch and returns the outcome as a BackendFetchResult. A failure
+///         becomes a classified failure value, never an exception, apart from the two control-flow signals noted
+///         below.
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         <c>FetchStreamingAsync()</c> yields each model as it resolves. Once it has begun yielding it cannot
+///         fold a late failure back into a result, so a fault surfaces as a thrown BackendFetchException instead.
+///         </description>
+///     </item>
+/// </list>
+/// Both paths share one spine. They resolve through the draft path (the only path that works on the client-less
+/// chassis), forward the caller's probe policy to discovery unchanged, and classify failures honestly: 401/403
+/// is Authentication, any other upstream status is Upstream, and anything unattributable is Unknown. Both also
+/// let the same two signals escape rather than swallow them: a cancellation through the caller's token, and an
+/// argument-guard violation. For the scenario-by-scenario story of each method, see its #region below.
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class BackendModelFetcherTests
 {

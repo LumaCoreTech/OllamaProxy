@@ -8,20 +8,39 @@ using OllamaProxy.Configuration;
 
 namespace OllamaProxy.Tests.Configuration;
 
-// Validation gate for the request-tracing options, grouped by the concern each rule guards.
-//
-// The Validate() method short-circuits when tracing is disabled, then checks three independent rules.
-// The sections below follow that flow:
-//
-//   1. General      : disabled tracing skips every rule (WhenDisabled); a fully configured block passes
-//                     (WhenFullyConfigured).
-//   2. Directory    : a blank directory is rejected when enabled (WhenBlankAndEnabled).
-//   3. MaxFiles     : a non-positive file cap is rejected (WhenNotPositive).
-//   4. MaxBodyBytes : null means "no cap" and is accepted (WhenNull); a positive cap is accepted
-//                     (WhenPositive); a non-positive cap is rejected (WhenNotPositive).
-//   5. Defaults     : the body cap defaults to null (unbounded) and attachment redaction defaults to on.
-//
-// For DeepClone() coverage, see the DeepClone() companion partial (RequestTracingOptionsTests.DeepClone.cs).
+/// <summary>
+/// Validation gate for <see cref="RequestTracingOptions"/>, grouped by the concern each rule guards.
+/// </summary>
+/// <remarks>
+/// The <c>Validate()</c> method short-circuits when tracing is disabled, then checks three independent rules. The
+/// sections below follow that flow:
+/// <list type="number">
+///     <item>
+///         <description>
+///         General: disabled tracing skips every rule (WhenDisabled); a fully configured block passes
+///         (WhenFullyConfigured).
+///         </description>
+///     </item>
+///     <item>
+///         <description>Directory: a blank directory is rejected when enabled (WhenBlankAndEnabled).</description>
+///     </item>
+///     <item>
+///         <description>MaxFiles: a non-positive file cap is rejected (WhenNotPositive).</description>
+///     </item>
+///     <item>
+///         <description>
+///         MaxBodyBytes: null means "no cap" and is accepted (WhenNull); a positive cap is accepted
+///         (WhenPositive); a non-positive cap is rejected (WhenNotPositive).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Defaults: the body cap defaults to null (unbounded) and attachment redaction defaults to on.
+///         </description>
+///     </item>
+/// </list>
+/// For DeepClone() coverage, see the DeepClone() companion partial (RequestTracingOptionsTests.DeepClone.cs).
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed partial class RequestTracingOptionsTests
 {

@@ -8,23 +8,48 @@ using OllamaProxy.Diagnostics;
 
 namespace OllamaProxy.Tests.Diagnostics;
 
-// The recording choke point: which stages get sanitized, and how bodies are bounded.
-//
-// TraceScope is where every recorded body passes through two gates — attachment redaction (request
-// stages only, toggleable) and truncation (toggleable via a nullable cap) — before landing in the
-// trace. The sections below follow a body from "which stages are touched" to "how far it is cut":
-//
-//   1. Construction  : null trace / clock and a non-positive cap are rejected; null is the valid
-//                      "unbounded" choice (WhenTraceNull, WhenMaxBodyBytesNotPositive, WhenMaxBodyBytesNull).
-//   2. Redaction scope: request stages are sanitized, response stages are not, and the toggle disables
-//                      it entirely (InboundRequest/BackendRequest redacted, BackendResponse/Outbound kept,
-//                      WhenRedactionDisabled).
-//   3. Order          : redaction runs before truncation, so a tiny cap measures the placeholder, not the
-//                      blob it replaced (WhenRedactedThenTruncated).
-//   4. Truncation     : a null cap keeps the whole body; a cap larger than the body keeps it; a smaller
-//                      cap cuts it and flags truncation on a UTF-8 boundary (WhenNoCap, WhenWithinCap,
-//                      WhenExceedsCap, WhenCutSplitsCodePoint).
-//   5. Body-less      : reasoning and notes record no body and never flag truncation (RecordReasoning, Note).
+/// <summary>
+/// Tests for <see cref="TraceScope"/>, the recording choke point: which stages get sanitized, and how bodies are
+/// bounded.
+/// </summary>
+/// <remarks>
+/// <see cref="TraceScope"/> is where every recorded body passes through two gates — attachment redaction (request
+/// stages only, toggleable) and truncation (toggleable via a nullable cap) — before landing in the trace. The
+/// sections below follow a body from "which stages are touched" to "how far it is cut":
+/// <list type="number">
+///     <item>
+///         <description>
+///         Construction: null trace / clock and a non-positive cap are rejected; null is the valid "unbounded"
+///         choice (WhenTraceNull, WhenMaxBodyBytesNotPositive, WhenMaxBodyBytesNull).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Redaction scope: request stages are sanitized, response stages are not, and the toggle disables it
+///         entirely (InboundRequest/BackendRequest redacted, BackendResponse/Outbound kept,
+///         WhenRedactionDisabled).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Order: redaction runs before truncation, so a tiny cap measures the placeholder, not the blob it
+///         replaced (WhenRedactedThenTruncated).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Truncation: a null cap keeps the whole body; a cap larger than the body keeps it; a smaller cap cuts
+///         it and flags truncation on a UTF-8 boundary (WhenNoCap, WhenWithinCap, WhenExceedsCap,
+///         WhenCutSplitsCodePoint).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Body-less: reasoning and notes record no body and never flag truncation (RecordReasoning, Note).
+///         </description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class TraceScopeTests
 {

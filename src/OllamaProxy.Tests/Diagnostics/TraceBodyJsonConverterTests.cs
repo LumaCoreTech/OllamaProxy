@@ -9,27 +9,45 @@ using OllamaProxy.Diagnostics;
 
 namespace OllamaProxy.Tests.Diagnostics;
 
-// Body rendering: the shapes a captured body can take, and how each is written and read back.
-//
-// The converter exists to make a persisted trace readable without rewriting what was captured. It keys on
-// the body's shape, never on the endpoint, so these tests pin every half of that contract:
-//
-//   1. Write — structured: a JSON object or array is inlined as nested JSON so it reads as part of the
-//      surrounding document instead of an escaped one-line string (WhenBodyIsStructuredJson). The writer's
-//      indentation flows through to the inlined value (WhenIndentationEnabled).
-//
-//   2. Write — SSE: a data-only transcript is unwrapped into a JSON array of its events, each event inlined
-//      when it is itself JSON (WhenBodyIsDataOnlySse). A stream that is not cleanly unwrappable — richer
-//      event:/id:/retry: frames or a transcript with no JSON payload — stays verbatim
-//      (WhenSseIsNotUnwrappable).
-//
-//   3. Write — everything else: plain text, a bare scalar, an empty body, or a fragment truncated mid-token
-//      stays a verbatim string, so nothing is silently retyped (WhenBodyIsNotStructuredJson).
-//
-//   4. Read & round-trip: a string token comes back unchanged (WhenTokenIsString) and an inlined object or
-//      array comes back as its compact JSON text (WhenTokenIsInlinedStructure); a structured body round-trips
-//      exactly (Roundtrip_StructuredBody), while an unwrapped SSE transcript reads back as its event array,
-//      not the wire transcript — a one-way projection (Roundtrip_SseBody).
+/// <summary>
+/// Tests for <see cref="TraceBodyJsonConverter"/> body rendering: the shapes a captured body can take, and how
+/// each is written and read back.
+/// </summary>
+/// <remarks>
+/// The converter exists to make a persisted trace readable without rewriting what was captured. It keys on the
+/// body's shape, never on the endpoint, so these tests pin every half of that contract:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Write — structured: a JSON object or array is inlined as nested JSON so it reads as part of the
+///         surrounding document instead of an escaped one-line string (WhenBodyIsStructuredJson). The writer's
+///         indentation flows through to the inlined value (WhenIndentationEnabled).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Write — SSE: a data-only transcript is unwrapped into a JSON array of its events, each event inlined
+///         when it is itself JSON (WhenBodyIsDataOnlySse). A stream that is not cleanly unwrappable — richer
+///         event:/id:/retry: frames or a transcript with no JSON payload — stays verbatim
+///         (WhenSseIsNotUnwrappable).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Write — everything else: plain text, a bare scalar, an empty body, or a fragment truncated mid-token
+///         stays a verbatim string, so nothing is silently retyped (WhenBodyIsNotStructuredJson).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Read &amp; round-trip: a string token comes back unchanged (WhenTokenIsString) and an inlined object
+///         or array comes back as its compact JSON text (WhenTokenIsInlinedStructure); a structured body
+///         round-trips exactly (Roundtrip_StructuredBody), while an unwrapped SSE transcript reads back as its
+///         event array, not the wire transcript — a one-way projection (Roundtrip_SseBody).
+///         </description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class TraceBodyJsonConverterTests
 {

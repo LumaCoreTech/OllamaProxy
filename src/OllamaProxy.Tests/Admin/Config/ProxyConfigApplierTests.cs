@@ -9,26 +9,40 @@ using OllamaProxy.Hosting.Cascade;
 
 namespace OllamaProxy.Tests.Admin.Config;
 
-// Apply orchestration: write, recycle, and roll back on reject so disk never keeps a rejected config.
-//
-// These tests follow ApplyAsync through its three terminal outcomes, escalating from the happy path to the
-// failure modes that justify the rollback machinery:
-//
-//   1. Applied: the writer persists and the recycle validates, so the change goes live
-//      (WhenWriteSucceedsAndRecycleSucceeds).
-//
-//   2. ValidationRejected — the property the whole design exists for: the recycle rejects the candidate, so the
-//      previously written snapshot is restored over the rejected file (WhenRecycleRejects_RestoresPreviousFile)
-//      and a first-ever write is rolled back by DELETING the file rather than leaving a rejected one behind
-//      (WhenRecycleRejects_AndNoPreviousFile_DeletesFile). A failed rollback is swallowed so the operator still
-//      gets the validation errors (WhenRollbackFails_StillReportsValidationErrors).
-//
-//   3. WriteFailed: the write itself faults, so no recycle is attempted and there is nothing to roll back
-//      (WhenWriteFails_DoesNotRecycle).
-//
-// Constructor guards and the null-desired-state guard close the file. For the section-rewrite writer this
-// orchestration drives, see ProxyConfigWriterTests; for the validated recycle it consumes, see
-// ProxyHostSupervisorTests.
+/// <summary>
+/// Tests for <see cref="ProxyConfigApplier"/>: write, recycle, and roll back on reject so disk never keeps a
+/// rejected config.
+/// </summary>
+/// <remarks>
+/// These tests follow <c>ApplyAsync</c> through its three terminal outcomes, escalating from the happy path to
+/// the failure modes that justify the rollback machinery:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Applied: the writer persists and the recycle validates, so the change goes live
+///         (WhenWriteSucceedsAndRecycleSucceeds).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         ValidationRejected — the property the whole design exists for: the recycle rejects the candidate, so
+///         the previously written snapshot is restored over the rejected file (WhenRecycleRejects_RestoresPreviousFile)
+///         and a first-ever write is rolled back by DELETING the file rather than leaving a rejected one behind
+///         (WhenRecycleRejects_AndNoPreviousFile_DeletesFile). A failed rollback is swallowed so the operator
+///         still gets the validation errors (WhenRollbackFails_StillReportsValidationErrors).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         WriteFailed: the write itself faults, so no recycle is attempted and there is nothing to roll back
+///         (WhenWriteFails_DoesNotRecycle).
+///         </description>
+///     </item>
+/// </list>
+/// Constructor guards and the null-desired-state guard close the file. For the section-rewrite writer this
+/// orchestration drives, see <see cref="ProxyConfigWriterTests"/>; for the validated recycle it consumes, see
+/// <see cref="OllamaProxy.Tests.Hosting.Cascade.ProxyHostSupervisorTests"/>.
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed partial class ProxyConfigApplierTests
 {

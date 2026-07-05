@@ -8,20 +8,36 @@ using OllamaProxy.Configuration;
 
 namespace OllamaProxy.Tests.Configuration;
 
-// Validation gate for the reasoning-details cache options, grouped by the concern each rule guards.
-//
-// The Validate() method short-circuits when the round-trip is disabled, then checks two independent range
-// rules. The sections below follow that flow:
-//
-//   1. General                  : disabled caching skips every rule (WhenDisabled); a fully configured
-//                                  block passes (WhenFullyConfigured).
-//   2. SlidingExpirationSeconds : the inclusive [1, 3600] range is accepted at both boundaries
-//                                  (WhenAtBoundary); a value just outside either end is rejected
-//                                  (WhenOutOfRange).
-//   3. MaxEntries               : the inclusive [1, 65536] range is accepted at both boundaries
-//                                  (WhenAtBoundary); a value just outside either end is rejected
-//                                  (WhenOutOfRange).
-//   4. Defaults                 : caching defaults to on, the sliding window to 300s, the cap to 1024.
+/// <summary>
+/// Validation gate for <see cref="ReasoningDetailsCacheOptions"/>, grouped by the concern each rule guards.
+/// </summary>
+/// <remarks>
+/// The <c>Validate()</c> method short-circuits when the round-trip is disabled, then checks two independent range
+/// rules. The sections below follow that flow:
+/// <list type="number">
+///     <item>
+///         <description>
+///         General: disabled caching skips every rule (WhenDisabled); a fully configured block passes
+///         (WhenFullyConfigured).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         SlidingExpirationSeconds: the inclusive [1, 3600] range is accepted at both boundaries
+///         (WhenAtBoundary); a value just outside either end is rejected (WhenOutOfRange).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         MaxEntries: the inclusive [1, 65536] range is accepted at both boundaries (WhenAtBoundary); a value
+///         just outside either end is rejected (WhenOutOfRange).
+///         </description>
+///     </item>
+///     <item>
+///         <description>Defaults: caching defaults to on, the sliding window to 300s, the cap to 1024.</description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class ReasoningDetailsCacheOptionsTests
 {

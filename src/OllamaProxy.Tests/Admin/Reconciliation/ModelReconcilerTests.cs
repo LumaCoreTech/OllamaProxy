@@ -9,51 +9,80 @@ using OllamaProxy.Providers.Abstractions;
 
 namespace OllamaProxy.Tests.Admin.Reconciliation;
 
-// Reconciliation: from a freshly fetched snapshot back to a stable, operator-facing model list.
-//
-// These tests follow one backend's models as the engine compares the operator's existing pins against a
-// just-fetched snapshot — the heart of the admin "Fetch" flow — and prove the invariants the UI relies on:
-//
-//   1. Pure cases: empty in → empty out; a snapshot with no pins is all Discovered; pins all present are
-//      all Available (PinsAndSnapshotAreEmpty, NoPins, AllPinsPresentInSnapshot).
-//
-//   2. The point of the exercise: a pin the backend dropped becomes Unavailable but is never deleted; the
-//      result interleaves Available pins and Discovered models in snapshot order, with Unavailable pins
-//      appended at the end so a model stays in the same position when toggling between pinned and unpinned
-//      (PinMissingFromSnapshot, PinsAndDiscoveriesMix).
-//
-//   3. Match semantics: the upstream id is the key — an alias still matches, case differences do not (ordinal),
-//      every handed pin is reconciled because the caller passes only this backend's own registry, and several
-//      pins may deliberately share one upstream id (the "+ variant" use case) without swallowing each other or
-//      the candidate (PinUsesUpstreamAlias, UpstreamIdCaseDiffers, HandedPins, MultiplePinsShareUpstream).
-//
-//   4. Exposure-rule wiring: discovered and pinned names carry the backend prefix on their exposed name while
-//      the bare name stays unprefixed, a Discovered row shows the backend's raw reported window unnarrowed by
-//      the default, pin capabilities resolve as Configured, and provider metadata provenance is preserved
-//      (BackendHasPrefix_DiscoveredNameIsPrefixed, BackendHasPrefix_PinnedNameIsPrefixed,
-//      DiscoveredRowShowsRawReportedWindow, PinOverridesCapabilities, SnapshotCarriesCapabilities).
-//
-//   5. Result projection: the headline counts mirror the per-row states (ResultHasAllStates).
-//
-//   6. Drift carry-through: an available pin copies the backend's reported capabilities and context onto the
-//      row so the surface can flag stale pins, while unavailable and discovered rows carry nothing; DriftCount
-//      counts only the drifted pins (PinIsAvailable, PinIsUnavailable, RowIsDiscovered, ResultHasDrift).
-//      The drift comparison itself lives on ReconciledModel and is exercised by ReconciledModelTests.
-//
-//   7. Context inheritance: pins without an explicit ContextLength override dynamically inherit the matched
-//      candidate's reported context, falling back to the backend default only when none is reported (the
-//      reported value wins and is never narrowed by the default), so they track the backend's honest value
-//      rather than freezing it at pin creation time; only pins with explicit overrides participate in context
-//      drift detection (PinHasNoExplicitContext, PinHasExplicitContext, FallsBackToBackendDefault,
-//      ReportedExceedsDefault).
-//
-//   8. Invalid args: the four null/blank guards.
-//
-// Sections 1–8 above cover the pure Reconcile(name, backend, pins, snapshot) merge (#region Reconcile(), with the
-// numbered dividers inside). The mode-aware ReconcileBackend(name, backend, effectiveMode, snapshot) wrapper —
-// which decides whether the backend's registry participates at all — follows in #region ReconcileBackend():
-// PlugAndPlay drops the registry exactly as the runtime catalog does, while Hybrid and Explicit honor it, plus
-// its own guards.
+/// <summary>
+/// Tests for <see cref="ModelReconciler"/>: from a freshly fetched snapshot back to a stable, operator-facing
+/// model list.
+/// </summary>
+/// <remarks>
+/// These tests follow one backend's models as the engine compares the operator's existing pins against a
+/// just-fetched snapshot — the heart of the admin "Fetch" flow — and prove the invariants the UI relies on:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Pure cases: empty in → empty out; a snapshot with no pins is all Discovered; pins all present are all
+///         Available (PinsAndSnapshotAreEmpty, NoPins, AllPinsPresentInSnapshot).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         The point of the exercise: a pin the backend dropped becomes Unavailable but is never deleted; the
+///         result interleaves Available pins and Discovered models in snapshot order, with Unavailable pins
+///         appended at the end so a model stays in the same position when toggling between pinned and unpinned
+///         (PinMissingFromSnapshot, PinsAndDiscoveriesMix).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Match semantics: the upstream id is the key — an alias still matches, case differences do not
+///         (ordinal), every handed pin is reconciled because the caller passes only this backend's own registry,
+///         and several pins may deliberately share one upstream id (the "+ variant" use case) without swallowing
+///         each other or the candidate (PinUsesUpstreamAlias, UpstreamIdCaseDiffers, HandedPins,
+///         MultiplePinsShareUpstream).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Exposure-rule wiring: discovered and pinned names carry the backend prefix on their exposed name while
+///         the bare name stays unprefixed, a Discovered row shows the backend's raw reported window unnarrowed by
+///         the default, pin capabilities resolve as Configured, and provider metadata provenance is preserved
+///         (BackendHasPrefix_DiscoveredNameIsPrefixed, BackendHasPrefix_PinnedNameIsPrefixed,
+///         DiscoveredRowShowsRawReportedWindow, PinOverridesCapabilities, SnapshotCarriesCapabilities).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Result projection: the headline counts mirror the per-row states (ResultHasAllStates).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Drift carry-through: an available pin copies the backend's reported capabilities and context onto the
+///         row so the surface can flag stale pins, while unavailable and discovered rows carry nothing; DriftCount
+///         counts only the drifted pins (PinIsAvailable, PinIsUnavailable, RowIsDiscovered, ResultHasDrift). The
+///         drift comparison itself lives on ReconciledModel and is exercised by
+///         <see cref="ReconciledModelTests"/>.
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Context inheritance: pins without an explicit ContextLength override dynamically inherit the matched
+///         candidate's reported context, falling back to the backend default only when none is reported (the
+///         reported value wins and is never narrowed by the default), so they track the backend's honest value
+///         rather than freezing it at pin creation time; only pins with explicit overrides participate in context
+///         drift detection (PinHasNoExplicitContext, PinHasExplicitContext, FallsBackToBackendDefault,
+///         ReportedExceedsDefault).
+///         </description>
+///     </item>
+///     <item>
+///         <description>Invalid args: the four null/blank guards.</description>
+///     </item>
+/// </list>
+/// Sections 1–8 above cover the pure Reconcile(name, backend, pins, snapshot) merge (#region Reconcile(), with
+/// the numbered dividers inside). The mode-aware ReconcileBackend(name, backend, effectiveMode, snapshot) wrapper
+/// — which decides whether the backend's registry participates at all — follows in #region ReconcileBackend():
+/// PlugAndPlay drops the registry exactly as the runtime catalog does, while Hybrid and Explicit honor it, plus
+/// its own guards.
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class ModelReconcilerTests
 {

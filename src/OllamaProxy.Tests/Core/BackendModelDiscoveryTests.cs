@@ -9,23 +9,38 @@ using OllamaProxy.Providers.Abstractions;
 
 namespace OllamaProxy.Tests.Core;
 
-// Backend model discovery: provider snapshots become proxy-ready candidates.
-//
-// These tests cover the orchestration extracted from ModelCatalogBuilder: raw provider models are transformed into
-// resolved candidates, capability probes are gated by policy and concurrency, and invalid inputs fail before any
-// provider call is attempted.
-//
-//   1. Candidate resolution: discovered order is preserved, backend prefixes are applied, the backend's raw
-//      reported context window is carried through unchanged (the configured default never narrows it), and
-//      resolved capability provenance is preserved.
-//
-//   2. Probe policy: a model with no resolvable effective window is skipped for the startup catalog policy, while a
-//      context-less model rescued by the backend default is still probed; the admin fetch policy probes every
-//      model so the UI can display every recoverable fact.
-//
-//   3. Concurrency: MaxConcurrentProbes limits in-flight capability resolutions within one backend.
-//
-//   4. Invalid arguments: null resolved backends and backend options are rejected.
+/// <summary>
+/// Tests for <see cref="BackendModelDiscovery"/>: provider snapshots become proxy-ready candidates.
+/// </summary>
+/// <remarks>
+/// These tests cover the orchestration extracted from ModelCatalogBuilder: raw provider models are transformed
+/// into resolved candidates, capability probes are gated by policy and concurrency, and invalid inputs fail
+/// before any provider call is attempted.
+/// <list type="number">
+///     <item>
+///         <description>
+///         Candidate resolution: discovered order is preserved, backend prefixes are applied, the backend's raw
+///         reported context window is carried through unchanged (the configured default never narrows it), and
+///         resolved capability provenance is preserved.
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Probe policy: a model with no resolvable effective window is skipped for the startup catalog policy,
+///         while a context-less model rescued by the backend default is still probed; the admin fetch policy
+///         probes every model so the UI can display every recoverable fact.
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Concurrency: MaxConcurrentProbes limits in-flight capability resolutions within one backend.
+///         </description>
+///     </item>
+///     <item>
+///         <description>Invalid arguments: null resolved backends and backend options are rejected.</description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class BackendModelDiscoveryTests
 {

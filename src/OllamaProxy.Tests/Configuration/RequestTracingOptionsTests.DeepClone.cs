@@ -6,12 +6,14 @@ using OllamaProxy.Configuration;
 
 namespace OllamaProxy.Tests.Configuration;
 
-// DeepClone() companion to the validation tests in the anchor file (see Validate()).
-//
-// RequestTracing is value-typed throughout, so the copy is verified by reflection through DeepCloneVerifier:
-// one test proves every simple property is carried into a fresh instance, the other pins the (currently empty)
-// set of reference-typed properties so a future reference member cannot be added without its own deep-copy
-// coverage.
+/// <summary>
+/// DeepClone() companion to the validation tests in the anchor file (see <see cref="RequestTracingOptions.Validate"/>).
+/// </summary>
+/// <remarks>
+/// RequestTracing is value-typed throughout, so the copy is verified by reflection through DeepCloneVerifier: one
+/// test proves every simple property is carried into a fresh instance, the other pins the (currently empty) set
+/// of reference-typed properties so a future reference member cannot be added without its own deep-copy coverage.
+/// </remarks>
 public sealed partial class RequestTracingOptionsTests
 {
 	/// <summary>

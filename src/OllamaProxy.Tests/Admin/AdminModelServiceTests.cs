@@ -13,44 +13,56 @@ using OllamaProxy.Admin.Fetch;
 using OllamaProxy.Configuration;
 using OllamaProxy.Core;
 using OllamaProxy.Providers.Abstractions;
+using OllamaProxy.Tests.Admin.Editing;
+using OllamaProxy.Tests.Admin.Fetch;
+using OllamaProxy.Tests.Admin.Reconciliation;
 
 namespace OllamaProxy.Tests.Admin;
 
-// Admin model service: preview an uncommitted draft backend, load the live configuration as an editable draft,
-// and apply a complete edited configuration.
-//
-// These tests follow the three members of IAdminModelService:
-//
-//   FetchDraftSnapshotAsync is the editor's model-list data source for an uncommitted backend: it fetches the
-//   raw, unreconciled snapshot against the draft's own (unsaved) settings so the editor can reconcile it locally
-//   and re-reconcile on every pin/unpin/mode change without another round-trip. The caller picks the probe
-//   policy — NeverProbe for a refresh, ProbeAll for an on-demand capability probe:
-//
-//     1. It materializes the draft and returns its raw candidates unreconciled (WhenDraftSucceeds), passing the
-//        caller's probe policy through to the fetcher (WhenProbing), recovering the draft's blank API key from
-//        the snapshot by OriginalName so the fetch authenticates with the saved secret (WhenDraftKeyBlank); a
-//        fetch failure is captured as a failure snapshot rather than thrown (WhenDraftFetchFails); an unnamed
-//        draft still fetches under a fallback label (WhenDraftUnnamed); a null draft is rejected (WhenDraftNull).
-//
-//   GetEditableStateAsync is the load counterpart to ApplyDesiredStateAsync: it projects the live snapshot into
-//   an editable draft for the editor to bind to, never handing back a secret:
-//
-//     2. It reads the snapshot and dematerializes it into a draft that mirrors the configuration with each API
-//        key blanked (WhenLoading); a cancelled token is honoured before any work (WhenCancelledThroughToken).
-//
-//   ApplyDesiredStateAsync materializes the whole editor draft into an authoritative desired state and hands it
-//   to the applier, never mutating the snapshot:
-//
-//     3. It keys the backends by name with their write-only keys resolved and carries the draft's request
-//        tracing forward (WhenApplying), returns the applier's outcome and the chosen policy verbatim
-//        (WhenApplierRejects), propagates the materializer's duplicate-name guard (WhenDuplicateNames), and
-//        rejects a null state before touching the applier (WhenStateNull).
-//
-// Constructor guards (the three null collaborators) close the file.
-//
-// For the per-backend fetch and its failure classification, see BackendModelFetcherTests; for the pure
-// pin-vs-snapshot merge, see ModelReconcilerTests; for the draft-to-ProxyOptions materialization in isolation,
-// see DesiredStateMaterializerTests.
+/// <summary>
+/// Tests for <see cref="AdminModelService"/>: preview an uncommitted draft backend, load the live configuration
+/// as an editable draft, and apply a complete edited configuration.
+/// </summary>
+/// <remarks>
+/// These tests follow the three members of <see cref="IAdminModelService"/>:
+/// <list type="number">
+///     <item>
+///         <description>
+///         <c>FetchDraftSnapshotAsync</c> is the editor's model-list data source for an uncommitted backend: it
+///         fetches the raw, unreconciled snapshot against the draft's own (unsaved) settings so the editor can
+///         reconcile it locally and re-reconcile on every pin/unpin/mode change without another round-trip. The
+///         caller picks the probe policy — NeverProbe for a refresh, ProbeAll for an on-demand capability probe.
+///         It materializes the draft and returns its raw candidates unreconciled (WhenDraftSucceeds), passing the
+///         caller's probe policy through to the fetcher (WhenProbing), recovering the draft's blank API key from
+///         the snapshot by OriginalName so the fetch authenticates with the saved secret (WhenDraftKeyBlank); a
+///         fetch failure is captured as a failure snapshot rather than thrown (WhenDraftFetchFails); an unnamed
+///         draft still fetches under a fallback label (WhenDraftUnnamed); a null draft is rejected (WhenDraftNull).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         <c>GetEditableStateAsync</c> is the load counterpart to <c>ApplyDesiredStateAsync</c>: it projects the
+///         live snapshot into an editable draft for the editor to bind to, never handing back a secret. It reads
+///         the snapshot and dematerializes it into a draft that mirrors the configuration with each API key
+///         blanked (WhenLoading); a cancelled token is honoured before any work (WhenCancelledThroughToken).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         <c>ApplyDesiredStateAsync</c> materializes the whole editor draft into an authoritative desired state
+///         and hands it to the applier, never mutating the snapshot. It keys the backends by name with their
+///         write-only keys resolved and carries the draft's request tracing forward (WhenApplying), returns the
+///         applier's outcome and the chosen policy verbatim (WhenApplierRejects), propagates the materializer's
+///         duplicate-name guard (WhenDuplicateNames), and rejects a null state before touching the applier
+///         (WhenStateNull).
+///         </description>
+///     </item>
+/// </list>
+/// Constructor guards (the three null collaborators) close the file. For the per-backend fetch and its failure
+/// classification, see <see cref="BackendModelFetcherTests"/>; for the pure pin-vs-snapshot merge, see
+/// <see cref="ModelReconcilerTests"/>; for the draft-to-ProxyOptions materialization in isolation, see
+/// <see cref="DesiredStateMaterializerTests"/>.
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class AdminModelServiceTests
 {
@@ -372,14 +384,13 @@ public sealed class AdminModelServiceTests
 			Draft("cloud", originalName: "cloud", first),
 			Draft("cloud", originalName: null, second));
 
-		// Act + Assert: the duplicate-name guard fires; the message is asserted by prefix so the localized
-		// "(Parameter 'state')" suffix does not break the assertion on a non-English machine.
+		// Act + Assert
 		var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
 			                sut.ApplyDesiredStateAsync(
 				                state,
 				                CancellationToken.None));
 		Assert.Equal("state", exception.ParamName);
-		Assert.StartsWith("The desired state contains more than one backend named 'cloud'.", exception.Message);
+		AssertCustomArgumentMessage("The desired state contains more than one backend named 'cloud'.", exception);
 
 		// Negative check: the guard fired before any apply was attempted.
 		Assert.Equal(0, applier.ApplyCallCount);
@@ -614,6 +625,21 @@ public sealed class AdminModelServiceTests
 	/// <returns>The fetcher double.</returns>
 	private static FakeFetcher FetcherReturning(params BackendFetchResult[] results) => new(
 		results.ToDictionary(result => result.BackendName, StringComparer.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// Asserts the exact custom part of an <see cref="ArgumentException.Message"/> without asserting the localized
+	/// framework-added parameter suffix.
+	/// </summary>
+	/// <param name="expectedMessage">The custom production message expected at the start of the exception text.</param>
+	/// <param name="exception">The exception whose message should carry the custom production text.</param>
+	private static void AssertCustomArgumentMessage(string expectedMessage, ArgumentException exception)
+	{
+		string actualMessage = exception.Message.Length >= expectedMessage.Length
+			                       ? exception.Message[..expectedMessage.Length]
+			                       : exception.Message;
+
+		Assert.Equal(expectedMessage, actualMessage);
+	}
 
 	/// <summary>
 	/// A fetcher test double that returns canned results keyed by backend name and records the backends it was

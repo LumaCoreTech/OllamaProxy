@@ -8,20 +8,39 @@ using OllamaProxy.Diagnostics;
 
 namespace OllamaProxy.Tests.Diagnostics;
 
-// Response-body teeing: the capture buffer next to the live forward path.
-//
-// CapturingStream forwards every write to the inner stream and tees a copy into a buffer that is either
-// bounded (a positive cap) or unbounded (null). The sections below cover both the forwarding contract
-// and the capture/truncation behavior:
-//
-//   1. Forwarding   : every byte written reaches the inner stream regardless of the cap (WritesReachInner).
-//   2. Unbounded    : a null cap captures the whole response and never flags truncation
-//                     (WhenNoLimit_CapturesEverything).
-//   3. Bounded       : a write within budget is captured whole (WhenWithinLimit); a write past budget is
-//                     cut and flagged (WhenExceedsLimit); a cut that splits a multi-byte code point drops
-//                     the dangling bytes on decode (WhenCutSplitsCodePoint); a later write after the budget
-//                     is exhausted flags truncation without growing the buffer (WhenAlreadyFull).
-//   4. Construction  : a non-positive cap is rejected; a null inner stream is rejected.
+/// <summary>
+/// Tests for <see cref="CapturingStream"/> response-body teeing: the capture buffer next to the live forward
+/// path.
+/// </summary>
+/// <remarks>
+/// <see cref="CapturingStream"/> forwards every write to the inner stream and tees a copy into a buffer that is
+/// either bounded (a positive cap) or unbounded (null). The sections below cover both the forwarding contract and
+/// the capture/truncation behavior:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Forwarding: every byte written reaches the inner stream regardless of the cap (WritesReachInner).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Unbounded: a null cap captures the whole response and never flags truncation
+///         (WhenNoLimit_CapturesEverything).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Bounded: a write within budget is captured whole (WhenWithinLimit); a write past budget is cut and
+///         flagged (WhenExceedsLimit); a cut that splits a multi-byte code point drops the dangling bytes on
+///         decode (WhenCutSplitsCodePoint); a later write after the budget is exhausted flags truncation without
+///         growing the buffer (WhenAlreadyFull).
+///         </description>
+///     </item>
+///     <item>
+///         <description>Construction: a non-positive cap is rejected; a null inner stream is rejected.</description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class CapturingStreamTests
 {

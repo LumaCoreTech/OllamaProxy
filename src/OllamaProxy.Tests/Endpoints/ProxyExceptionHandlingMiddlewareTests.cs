@@ -12,24 +12,53 @@ using OllamaProxy.Endpoints;
 
 namespace OllamaProxy.Tests.Endpoints;
 
-// The pipeline safety net, from a clean pass-through to a protocol-shaped 500.
-//
-// The middleware wraps the endpoint pipeline and only matters when something unexpected escapes it. Every
-// handler already maps its own ProviderException, so what reaches here is a genuine fault. These tests
-// follow that arc:
-//
-//   1. Pass-through  : when the pipeline succeeds the middleware is invisible; the response is left exactly
-//                      as the endpoint wrote it (WhenPipelineSucceeds).
-//   2. Ollama surface: an unexpected exception on the /api surface becomes a 500 in the Ollama error body
-//                      (WhenApiPipelineThrows). An unmatched path falls back to the same shape, which is the
-//                      proxy's primary client contract (WhenUnknownPathThrows).
-//   3. OpenAI surface: the same failure on the /v1 surface becomes a 500 in the OpenAI error envelope
-//                      (WhenV1PipelineThrows).
-//   4. Diagnostics   : every synthesized 500 is logged at Error together with the offending request
-//                      (WhenPipelineThrows).
-//   5. Client abort  : once the client has hung up the exception is expected teardown, so it propagates
-//                      untouched instead of being masked as a 500 (WhenClientAborted).
-//   6. Guards        : null context / next on invoke and a null logger on construction are rejected.
+/// <summary>
+/// Tests for <see cref="ProxyExceptionHandlingMiddleware"/>, the pipeline safety net, from a clean pass-through
+/// to a protocol-shaped 500.
+/// </summary>
+/// <remarks>
+/// The middleware wraps the endpoint pipeline and only matters when something unexpected escapes it. Every
+/// handler already maps its own ProviderException, so what reaches here is a genuine fault. These tests follow
+/// that arc:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Pass-through: when the pipeline succeeds the middleware is invisible; the response is left exactly as
+///         the endpoint wrote it (WhenPipelineSucceeds).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Ollama surface: an unexpected exception on the /api surface becomes a 500 in the Ollama error body
+///         (WhenApiPipelineThrows). An unmatched path falls back to the same shape, which is the proxy's primary
+///         client contract (WhenUnknownPathThrows).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         OpenAI surface: the same failure on the /v1 surface becomes a 500 in the OpenAI error envelope
+///         (WhenV1PipelineThrows).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Diagnostics: every synthesized 500 is logged at Error together with the offending request
+///         (WhenPipelineThrows).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Client abort: once the client has hung up the exception is expected teardown, so it propagates
+///         untouched instead of being masked as a 500 (WhenClientAborted).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Guards: null context / next on invoke and a null logger on construction are rejected.
+///         </description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class ProxyExceptionHandlingMiddlewareTests
 {

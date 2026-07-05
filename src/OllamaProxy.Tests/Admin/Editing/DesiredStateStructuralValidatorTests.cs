@@ -6,23 +6,34 @@ using OllamaProxy.Admin.Editing;
 
 namespace OllamaProxy.Tests.Admin.Editing;
 
-// Structural gate for the admin editor's draft: is the desired state keyable by backend name at all?
-//
-// The validator answers exactly one question the apply path would otherwise throw on — can every backend be
-// keyed by a unique, non-blank name? Everything else (URL shape, key length, provider support) is a domain rule
-// left to the recycle's dry-run. These tests walk from "structurally sound" to "structurally broken":
-//
-//   1. Sound drafts return null: a null draft (not yet loaded), an empty draft (an empty backend set is a
-//      valid configuration — the proxy starts with no models until a backend is added — so Apply stays enabled),
-//      and a draft with unique non-blank names (ReturnsNull).
-//
-//   2. Broken drafts return the exact message the editor shows and the apply path would throw:
-//      a blank name wins over everything (ReturnsBlankNameError), and otherwise duplicate names — compared
-//      case-insensitively and after trimming, matching how the routing layer keys them — are reported with the
-//      offending key(s) (ReturnsDuplicateNamesError).
-//
-// Messages are golden values matched exactly (Assert.Equal), because they are custom production strings the
-// operator reads — not localized BCL text.
+/// <summary>
+/// Tests for <see cref="DesiredStateStructuralValidator"/>, the structural gate for the admin editor's draft: is
+/// the desired state keyable by backend name at all?
+/// </summary>
+/// <remarks>
+/// The validator answers exactly one question the apply path would otherwise throw on — can every backend be
+/// keyed by a unique, non-blank name? Everything else (URL shape, key length, provider support) is a domain rule
+/// left to the recycle's dry-run. These tests walk from "structurally sound" to "structurally broken":
+/// <list type="number">
+///     <item>
+///         <description>
+///         Sound drafts return null: a null draft (not yet loaded), an empty draft (an empty backend set is a
+///         valid configuration — the proxy starts with no models until a backend is added — so Apply stays
+///         enabled), and a draft with unique non-blank names (ReturnsNull).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Broken drafts return the exact message the editor shows and the apply path would throw: a blank name
+///         wins over everything (ReturnsBlankNameError), and otherwise duplicate names — compared
+///         case-insensitively and after trimming, matching how the routing layer keys them — are reported with
+///         the offending key(s) (ReturnsDuplicateNamesError).
+///         </description>
+///     </item>
+/// </list>
+/// Messages are golden values matched exactly (Assert.Equal), because they are custom production strings the
+/// operator reads — not localized BCL text.
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class DesiredStateStructuralValidatorTests
 {
@@ -33,7 +44,9 @@ public sealed class DesiredStateStructuralValidatorTests
 	[Fact]
 	public void Validate_WhenDraftIsNull_ReturnsNull()
 	{
-		// Arrange + Act: the editor holds a null draft until the first load completes.
+		// Arrange: the editor holds a null draft until the first load completes.
+
+		// Act
 		string? result = DesiredStateStructuralValidator.Validate(null);
 
 		// Assert

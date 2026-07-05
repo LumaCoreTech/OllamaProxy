@@ -7,27 +7,40 @@ using OllamaProxy.Providers.Abstractions;
 
 namespace OllamaProxy.Tests.Admin.Reconciliation;
 
-// Drift detection on a single reconciled row: when does a still-honored pin count as "stale"?
-//
-// A pin is drifted when the values the operator recorded no longer match what the backend now reports.
-// Drift is only meaningful for an Available pin (one the snapshot still offers), because that is the only
-// state that carries the backend's reported values to compare against. These tests pin down the three
-// derived properties that express that idea:
-//
-//   1. HasCapabilityDrift: the four functional flags are compared; ModelCapabilities.Source is deliberately
-//      ignored (it records provenance, which always differs between a pin and a backend value), and the
-//      comparison is gated on the Available state plus both sides being known. Every row pairs a
-//      Configured pin against a ProviderMetadata backend value, so the "identical flags" row doubles as the
-//      proof that differing provenance alone is not drift.
-//
-//   2. HasContextDrift: the effective context windows are compared, gated on the Available state plus both
-//      windows being known.
-//
-//   3. IsDrifted: the OR of the two — capability drift, context drift, or both.
-//
-// ReconciledModelState and ModelCapabilities are built in each row's body via the helpers rather than passed as
-// TheoryData columns, so every column stays a serializable primitive and xUnit can enumerate and re-run each
-// case on its own. Because the file covers several members of the same type, each is isolated in its own #region.
+/// <summary>
+/// Tests for <see cref="ReconciledModel"/> drift detection on a single reconciled row: when does a still-honored
+/// pin count as "stale"?
+/// </summary>
+/// <remarks>
+/// A pin is drifted when the values the operator recorded no longer match what the backend now reports. Drift is
+/// only meaningful for an Available pin (one the snapshot still offers), because that is the only state that
+/// carries the backend's reported values to compare against. These tests pin down the three derived properties
+/// that express that idea:
+/// <list type="number">
+///     <item>
+///         <description>
+///         HasCapabilityDrift: the four functional flags are compared; ModelCapabilities.Source is deliberately
+///         ignored (it records provenance, which always differs between a pin and a backend value), and the
+///         comparison is gated on the Available state plus both sides being known. Every row pairs a Configured
+///         pin against a ProviderMetadata backend value, so the "identical flags" row doubles as the proof that
+///         differing provenance alone is not drift.
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         HasContextDrift: the effective context windows are compared, gated on the Available state plus both
+///         windows being known.
+///         </description>
+///     </item>
+///     <item>
+///         <description>IsDrifted: the OR of the two — capability drift, context drift, or both.</description>
+///     </item>
+/// </list>
+/// ReconciledModelState and ModelCapabilities are built in each row's body via the helpers rather than passed as
+/// TheoryData columns, so every column stays a serializable primitive and xUnit can enumerate and re-run each
+/// case on its own. Because the file covers several members of the same type, each is isolated in its own
+/// #region.
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class ReconciledModelTests
 {

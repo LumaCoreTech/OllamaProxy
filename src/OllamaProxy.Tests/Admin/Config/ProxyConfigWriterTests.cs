@@ -10,29 +10,44 @@ using OllamaProxy.Configuration;
 
 namespace OllamaProxy.Tests.Admin.Config;
 
-// Section-preserving config rewrite: replace OllamaProxy, keep everything else, never leak a secret.
-//
-// These tests follow WriteAsync as it turns a desired ProxyOptions state into the operator file's new content,
-// proving the three properties the single-file persistence model depends on:
-//
-//   1. Section replacement: the OllamaProxy section becomes the desired state, removed backends are gone, and
-//      enums round-trip by name (WhenFileIsEmpty, WhenReplacingExistingSection, WhenBackendRemoved).
-//
-//   2. Sibling preservation: Logging, AllowedHosts, Kestrel and any other top-level sections survive the
-//      rewrite untouched — critical because the foreground operator file is the one and only appsettings.json
-//      (WhenSiblingSectionsPresent).
-//
-//   3. Secret policy on entered keys: the admin view is file-only, so the keys reaching the writer are the
-//      operator's entered values. The default WriteToFile persists them verbatim — overwriting a previous
-//      on-disk key (WhenWriteToFile_PersistsEnteredKeyOverExistingKey), setting a first key where disk had none
-//      (WhenWriteToFileAndNoKeyOnDisk_PersistsEnteredKey), and writing a brand-new backend's key
-//      (WhenWriteToFileAndBackendIsNew_PersistsEnteredKey) — while EnvironmentOnly blanks every key
-//      (WhenEnvironmentOnly_BlanksKeys). The active policy is taken from AdminOptions because it is a
-//      deployment-level decision, not a per-apply choice. A corrupt file aborts the write so siblings are never
-//      lost (WhenExistingFileIsMalformed).
-//
-// Argument guards close the file. For the shared file double and builders, see FakeWritableProxyConfigFile and
-// Helpers; for the write-then-recycle orchestration that consumes this writer, see ProxyConfigApplierTests.
+/// <summary>
+/// Tests for <see cref="ProxyConfigWriter"/>: a section-preserving config rewrite that replaces OllamaProxy,
+/// keeps everything else, and never leaks a secret.
+/// </summary>
+/// <remarks>
+/// These tests follow <c>WriteAsync</c> as it turns a desired <see cref="ProxyOptions"/> state into the operator
+/// file's new content, proving the three properties the single-file persistence model depends on:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Section replacement: the OllamaProxy section becomes the desired state, removed backends are gone, and
+///         enums round-trip by name (WhenFileIsEmpty, WhenReplacingExistingSection, WhenBackendRemoved).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Sibling preservation: Logging, AllowedHosts, Kestrel and any other top-level sections survive the
+///         rewrite untouched — critical because the foreground operator file is the one and only appsettings.json
+///         (WhenSiblingSectionsPresent).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Secret policy on entered keys: the admin view is file-only, so the keys reaching the writer are the
+///         operator's entered values. The default WriteToFile persists them verbatim — overwriting a previous
+///         on-disk key (WhenWriteToFile_PersistsEnteredKeyOverExistingKey), setting a first key where disk had none
+///         (WhenWriteToFileAndNoKeyOnDisk_PersistsEnteredKey), and writing a brand-new backend's key
+///         (WhenWriteToFileAndBackendIsNew_PersistsEnteredKey) — while EnvironmentOnly blanks every key
+///         (WhenEnvironmentOnly_BlanksKeys). The active policy is taken from AdminOptions because it is a
+///         deployment-level decision, not a per-apply choice. A corrupt file aborts the write so siblings are
+///         never lost (WhenExistingFileIsMalformed).
+///         </description>
+///     </item>
+/// </list>
+/// Argument guards close the file. For the shared file double and builders, see FakeWritableProxyConfigFile and
+/// Helpers; for the write-then-recycle orchestration that consumes this writer, see
+/// <see cref="ProxyConfigApplierTests"/>.
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed partial class ProxyConfigWriterTests
 {

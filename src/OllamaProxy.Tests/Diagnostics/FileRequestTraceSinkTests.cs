@@ -13,20 +13,32 @@ using OllamaProxy.Hosting;
 
 namespace OllamaProxy.Tests.Diagnostics;
 
-// Trace persistence: the file the operator actually reads, and the names that keep it from clobbering itself.
-//
-// FileRequestTraceSink serializes one completed trace per file into the configured directory. Each test
-// writes through the real file system (an isolated temp directory torn down afterwards) and asserts on the
-// bytes that land on disk:
-//
-//   1. Happy path : a completed trace is written as one indented-JSON file carrying the flow metadata and
-//                   its entries (WhenCalled_PersistsTraceAsJsonFile).
-//
-//   2. File naming : the name disambiguates flows by the *whole* correlation id, not a short prefix, so two
-//                   requests on one keep-alive connection in the same millisecond do not collide and
-//                   overwrite each other (WhenCorrelationIdsShareEightCharPrefix); a correlation id
-//                   carrying a character invalid in a file name (Kestrel's "{conn}:{request}") is
-//                   sanitized rather than dropped on an IO error (WhenCorrelationIdContainsPathSeparator).
+/// <summary>
+/// Tests for <see cref="FileRequestTraceSink"/> trace persistence: the file the operator actually reads, and the
+/// names that keep it from clobbering itself.
+/// </summary>
+/// <remarks>
+/// <see cref="FileRequestTraceSink"/> serializes one completed trace per file into the configured directory. Each
+/// test writes through the real file system (an isolated temp directory torn down afterwards) and asserts on the
+/// bytes that land on disk:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Happy path: a completed trace is written as one indented-JSON file carrying the flow metadata and its
+///         entries (WhenCalled_PersistsTraceAsJsonFile).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         File naming: the name disambiguates flows by the *whole* correlation id, not a short prefix, so two
+///         requests on one keep-alive connection in the same millisecond do not collide and overwrite each other
+///         (WhenCorrelationIdsShareEightCharPrefix); a correlation id carrying a character invalid in a file name
+///         (Kestrel's "{conn}:{request}") is sanitized rather than dropped on an IO error
+///         (WhenCorrelationIdContainsPathSeparator).
+///         </description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class FileRequestTraceSinkTests : IDisposable
 {

@@ -13,27 +13,52 @@ using OllamaProxy.Diagnostics;
 
 namespace OllamaProxy.Tests.Diagnostics;
 
-// The traced request, end to end: from the disabled no-op to a fully recorded, redacted flow.
-//
-// The middleware bookends one request — capture inbound, publish the ambient scope, tee the response,
-// persist the trace — and must do all of it without changing what the client sees. These tests follow
-// that arc:
-//
-//   1. Disabled       : tracing off is a pure pass-through; next runs and nothing is persisted
-//                       (WhenTracingDisabled).
-//   2. Happy path     : an enabled trace records the inbound request and the outbound response, with the
-//                       inbound attachment redacted by default (WhenTracingEnabled). When the response
-//                       outgrows the byte budget the capture's truncation verdict survives into the
-//                       persisted entry (WhenOutboundBodyExceedsBudget).
-//   3. Redaction wiring: the RedactAttachments toggle reaches the scope — off keeps the blob verbatim
-//                       (WhenRedactionDisabled).
-//   4. Transparency   : the response still reaches the client and the request body is rewound for the
-//                       endpoint that follows (ForwardsResponse, RewindsRequestBody).
-//   5. Secrets        : credential headers are redacted in the recorded detail (RedactsAuthorizationHeader).
-//   6. Scope lifecycle: the scope is ambient during the pipeline and cleared afterwards, even when the
-//                       pipeline throws — and the trace is persisted regardless (PublishesScope,
-//                       WhenPipelineThrows).
-//   7. Guards         : null context/next on invoke and null dependencies on construction are rejected.
+/// <summary>
+/// Tests for <see cref="RequestTracingMiddleware"/>: the traced request, end to end — from the disabled no-op to
+/// a fully recorded, redacted flow.
+/// </summary>
+/// <remarks>
+/// The middleware bookends one request — capture inbound, publish the ambient scope, tee the response, persist
+/// the trace — and must do all of it without changing what the client sees. These tests follow that arc:
+/// <list type="number">
+///     <item>
+///         <description>Disabled: tracing off is a pure pass-through; next runs and nothing is persisted (WhenTracingDisabled).</description>
+///     </item>
+///     <item>
+///         <description>
+///         Happy path: an enabled trace records the inbound request and the outbound response, with the inbound
+///         attachment redacted by default (WhenTracingEnabled). When the response outgrows the byte budget the
+///         capture's truncation verdict survives into the persisted entry (WhenOutboundBodyExceedsBudget).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Redaction wiring: the RedactAttachments toggle reaches the scope — off keeps the blob verbatim
+///         (WhenRedactionDisabled).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Transparency: the response still reaches the client and the request body is rewound for the endpoint
+///         that follows (ForwardsResponse, RewindsRequestBody).
+///         </description>
+///     </item>
+///     <item>
+///         <description>Secrets: credential headers are redacted in the recorded detail (RedactsAuthorizationHeader).</description>
+///     </item>
+///     <item>
+///         <description>
+///         Scope lifecycle: the scope is ambient during the pipeline and cleared afterwards, even when the
+///         pipeline throws — and the trace is persisted regardless (PublishesScope, WhenPipelineThrows).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Guards: null context/next on invoke and null dependencies on construction are rejected.
+///         </description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class RequestTracingMiddlewareTests
 {

@@ -12,33 +12,53 @@ using OllamaProxy.Providers.Abstractions;
 
 namespace OllamaProxy.Tests.Hosting.Cascade;
 
-// Inner-host lifecycle under the supervisor: from first start through shutdown to live recycle.
-//
-// These tests follow the single live inner host the supervisor owns, in the order the chassis drives it:
-//
-//   1. Construction: the supervisor guards its dependencies (WhenFactoryIsNull, WhenLoggerIsNull).
-//
-//   2. StartAsync: the happy path activates a host (WhenFactorySucceeds). A start failure then forks on the
-//      configured policy — daemon stays resident and swallows (WhenInnerStartThrowsInDaemonMode), foreground
-//      rethrows so the process exits (WhenInnerStartThrowsInForegroundMode). A faulted candidate is always
-//      disposed (WhenInnerStartThrows_DisposesCandidate).
-//
-//   3. StopAsync: stops and disposes the active host (WhenActive), and is a no-op when nothing is active
-//      (WhenNeverStarted).
-//
-//   4. RecycleAsync — the core safety property: a validated candidate swaps in (WhenDryRunSucceeds), while a
-//      candidate that fails dry-run validation is discarded and the EXISTING host keeps serving
-//      (WhenDryRunFails). The failure path surfaces the right errors for both options-validation and generic
-//      faults (theory rows).
-//
-//   5. IsInnerHostActive — the readiness projection of every state above: false before a start
-//      (WhenNeverStarted), true once a host is active (WhenStarted), false again when a daemon-mode start
-//      failure leaves nothing serving (AfterDaemonStartFailure) or after a stop retires the host (AfterStop),
-//      true after a validated recycle swaps in a replacement (AfterSuccessfulRecycle), and — the safety
-//      property mirrored from section 4 — still true after a rejected recycle keeps the original serving
-//      (AfterRejectedRecycle).
-//
-// For the shared fakes (FakeProxyHost, FakeProxyHostFactory) and CreateSut, see Helpers.
+/// <summary>
+/// Tests for <see cref="ProxyHostSupervisor"/> inner-host lifecycle: from first start through shutdown to live
+/// recycle.
+/// </summary>
+/// <remarks>
+/// These tests follow the single live inner host the supervisor owns, in the order the chassis drives it:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Construction: the supervisor guards its dependencies (WhenFactoryIsNull, WhenLoggerIsNull).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         StartAsync: the happy path activates a host (WhenFactorySucceeds). A start failure then forks on the
+///         configured policy — daemon stays resident and swallows (WhenInnerStartThrowsInDaemonMode), foreground
+///         rethrows so the process exits (WhenInnerStartThrowsInForegroundMode). A faulted candidate is always
+///         disposed (WhenInnerStartThrows_DisposesCandidate).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         StopAsync: stops and disposes the active host (WhenActive), and is a no-op when nothing is active
+///         (WhenNeverStarted).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         RecycleAsync — the core safety property: a validated candidate swaps in (WhenDryRunSucceeds), while a
+///         candidate that fails dry-run validation is discarded and the EXISTING host keeps serving
+///         (WhenDryRunFails). The failure path surfaces the right errors for both options-validation and generic
+///         faults (theory rows).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         IsInnerHostActive — the readiness projection of every state above: false before a start
+///         (WhenNeverStarted), true once a host is active (WhenStarted), false again when a daemon-mode start
+///         failure leaves nothing serving (AfterDaemonStartFailure) or after a stop retires the host (AfterStop),
+///         true after a validated recycle swaps in a replacement (AfterSuccessfulRecycle), and — the safety
+///         property mirrored from section 4 — still true after a rejected recycle keeps the original serving
+///         (AfterRejectedRecycle).
+///         </description>
+///     </item>
+/// </list>
+/// For the shared fakes (FakeProxyHost, FakeProxyHostFactory) and CreateSut, see Helpers.
+/// </remarks>
 public sealed partial class ProxyHostSupervisorTests
 {
 	// --- 1. Construction ---

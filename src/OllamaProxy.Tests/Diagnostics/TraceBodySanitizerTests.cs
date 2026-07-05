@@ -8,28 +8,49 @@ using OllamaProxy.Diagnostics;
 
 namespace OllamaProxy.Tests.Diagnostics;
 
-// Attachment redaction: from "nothing to do" through the two attachment shapes to the edges.
-//
-// These tests walk the sanitizer from its cheapest path to its most involved one, mirroring how a body
-// actually flows through it:
-//
-//   1. Pass-through: a body with no attachment markers is returned byte-for-byte (WhenNoAttachments,
-//      WhenNotJson, WhenEmpty). A body that trips the pre-filter but carries only real http(s) URLs is
-//      also returned unchanged, never reformatted (WhenImagesContainsOnlyHttpUrls). The cheap pre-filter
-//      must never parse or reformat these.
-//
-//   2. Inbound images[]: bare base64 becomes an image marker, a real http(s) URL is kept, and a data
-//      URL inside images[] becomes a data-URL marker (WhenImagesContainsBase64, WhenImagesContainsHttpUrl,
-//      WhenImagesContainsDataUrl).
-//
-//   3. Backend data: URLs anywhere become data-URL markers carrying the media type and size
-//      (WhenBodyContainsDataUrl, WhenDataUrlNested).
-//
-//   4. Sizing and media-type formatting: bytes below 1024 read as "B", at or above as "KB" (1024-byte
-//      units), and a missing media type degrades to "unknown" (WhenPayloadSmall, WhenMediaTypeMissing).
-//
-//   5. Edges: malformed JSON is left untouched, the prompt text beside an image survives, and a body
-//      with many images redacts every one (WhenMalformedJson, WhenTextAccompaniesImage, WhenManyImages).
+/// <summary>
+/// Tests for <see cref="TraceBodySanitizer"/> attachment redaction: from "nothing to do" through the two
+/// attachment shapes to the edges.
+/// </summary>
+/// <remarks>
+/// These tests walk the sanitizer from its cheapest path to its most involved one, mirroring how a body actually
+/// flows through it:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Pass-through: a body with no attachment markers is returned byte-for-byte (WhenNoAttachments,
+///         WhenNotJson, WhenEmpty). A body that trips the pre-filter but carries only real http(s) URLs is also
+///         returned unchanged, never reformatted (WhenImagesContainsOnlyHttpUrls). The cheap pre-filter must
+///         never parse or reformat these.
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Inbound images[]: bare base64 becomes an image marker, a real http(s) URL is kept, and a data URL
+///         inside images[] becomes a data-URL marker (WhenImagesContainsBase64, WhenImagesContainsHttpUrl,
+///         WhenImagesContainsDataUrl).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Backend data: URLs anywhere become data-URL markers carrying the media type and size
+///         (WhenBodyContainsDataUrl, WhenDataUrlNested).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Sizing and media-type formatting: bytes below 1024 read as "B", at or above as "KB" (1024-byte
+///         units), and a missing media type degrades to "unknown" (WhenPayloadSmall, WhenMediaTypeMissing).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Edges: malformed JSON is left untouched, the prompt text beside an image survives, and a body with
+///         many images redacts every one (WhenMalformedJson, WhenTextAccompaniesImage, WhenManyImages).
+///         </description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class TraceBodySanitizerTests
 {
