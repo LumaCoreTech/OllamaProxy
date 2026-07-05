@@ -91,7 +91,7 @@ jobs:
 
     # ────────────────────────────────────────────────────────────────────────
     # Badge generation (main branch only). Each matrix leg produces its own
-    # test + coverage badge JSON, uploaded as a per-OS artifact for the
+    # build + test + coverage badge JSON, uploaded as a per-OS artifact for the
     # badge-update workflow to publish to the 'badges' branch.
     # ────────────────────────────────────────────────────────────────────────
     # Each generation step ALWAYS writes a badge file — including a red failure
@@ -100,6 +100,33 @@ jobs:
     # so the README reflects a broken build instead of silently keeping the last
     # green badge. continue-on-error is a belt-and-braces guard against an
     # unexpected scripting fault still leaving the upload step with a file.
+    #
+    # The Build badge is per-OS on purpose: shields.io's built-in workflow-status
+    # badge only knows the whole run's conclusion, so one failing leg would paint
+    # BOTH OS badges red. Deriving it from this leg's job.status instead lets
+    # Windows stay green while Ubuntu goes red (and vice versa).
+    - name: Generate Build Badge
+      if: github.ref == 'refs/heads/main' && always()
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        # job.status reflects this leg's health after restore, build, test, and
+        # (on Windows) the installer smoke build — every earlier step that can
+        # fail the job. A non-success outcome paints this OS's Build badge red.
+        $ok = "${{ job.status }}" -eq "success"
+        $color   = if ($ok) { "brightgreen" } else { "red" }
+        $message = if ($ok) { "passing" } else { "failing" }
+
+        $badge = @{
+          schemaVersion = 1
+          label   = "Build"
+          message = $message
+          color   = $color
+        } | ConvertTo-Json -Compress
+        New-Item -ItemType Directory -Force -Path badge-data | Out-Null
+        $badge | Out-File -Encoding ascii "badge-data/ollamaproxy-${{ matrix.slug }}-build-badge.json"
+        Write-Host "Build badge: $message ($color)"
+
     - name: Generate Test Badge
       if: github.ref == 'refs/heads/main' && always()
       continue-on-error: true

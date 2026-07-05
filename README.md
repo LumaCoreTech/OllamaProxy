@@ -16,7 +16,7 @@
           <td align="center"><b>Windows</b></td>
           <td align="left">
             &nbsp;&nbsp;
-            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/LumaCoreTech/OllamaProxy/build.yml?style=flat-square&label=Build" alt="Windows Build"></a>
+            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-windows-build-badge.json&style=flat-square" alt="Windows Build"></a>
             &nbsp;
             <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-windows-test-badge.json&style=flat-square" alt="Windows Tests"></a>
             &nbsp;
@@ -27,7 +27,7 @@
           <td align="center"><b>Ubuntu</b></td>
           <td align="left">
             &nbsp;&nbsp;
-            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/LumaCoreTech/OllamaProxy/build.yml?style=flat-square&label=Build" alt="Ubuntu Build"></a>
+            <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-ubuntu-build-badge.json&style=flat-square" alt="Ubuntu Build"></a>
             &nbsp;
             <a href="https://github.com/LumaCoreTech/OllamaProxy/actions/workflows/build.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LumaCoreTech/OllamaProxy/badges/ollamaproxy-ubuntu-test-badge.json&style=flat-square" alt="Ubuntu Tests"></a>
             &nbsp;

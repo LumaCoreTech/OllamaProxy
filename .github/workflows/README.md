@@ -54,9 +54,9 @@ git push origin v1.0.0
 The README badges use the [shields.io endpoint API](https://shields.io/endpoint) backed by JSON files
 on an orphan **`badges`** branch:
 
-1. Each matrix leg of `build.yml` (Ubuntu, Windows) parses its TRX counters into a **test** badge and
-   runs `dotnet-reportgenerator-globaltool` over the Cobertura coverage into a **coverage** badge,
-   uploading both as a per-OS `badge-data-<os>` artifact.
+1. Each matrix leg of `build.yml` (Ubuntu, Windows) derives a **build** badge from its own `job.status`,
+   parses its TRX counters into a **test** badge, and runs `dotnet-reportgenerator-globaltool` over the
+   Cobertura coverage into a **coverage** badge, uploading all three as a per-OS `badge-data-<os>` artifact.
 2. The dependent **`publish-badges`** job in the *same* workflow run (`needs: build`, `if: always()`,
    restricted to `main`) downloads those artifacts and commits the JSON to the `badges` branch
    (creating it as an empty orphan on first run).
@@ -72,8 +72,10 @@ on an orphan **`badges`** branch:
 
 | Badge | File on `badges` branch |
 | --- | --- |
+| Ubuntu Build | `ollamaproxy-ubuntu-build-badge.json` |
 | Ubuntu Tests | `ollamaproxy-ubuntu-test-badge.json` |
 | Ubuntu Coverage | `ollamaproxy-ubuntu-coverage-badge.json` |
+| Windows Build | `ollamaproxy-windows-build-badge.json` |
 | Windows Tests | `ollamaproxy-windows-test-badge.json` |
 | Windows Coverage | `ollamaproxy-windows-coverage-badge.json` |
 
@@ -82,8 +84,10 @@ on an orphan **`badges`** branch:
 The badge-generation steps are deliberately **resilient to a broken build**, so the README always
 reflects reality instead of freezing on the last green run:
 
-- Both steps run with `if: always()` **and** `continue-on-error: true`, and each one *always* writes
-  its JSON file.
+- All three badge steps run with `if: always()` **and** `continue-on-error: true`, and each one
+  *always* writes its JSON file.
+- The build badge is derived from `job.status`, so it reads **`failing`** (red) whenever any earlier
+  step in the leg — restore, build, test, or the Windows installer smoke build — failed.
 - If restore/build fails before any test runs (no TRX), the test badge is written as a red
   **`build failed`**.
 - If no coverage is collected, the coverage badge is written as a red **`unavailable`** (and
