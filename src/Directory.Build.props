@@ -56,9 +56,9 @@
 	<!-- Assembly and repository metadata -->
 	<PropertyGroup>
 		<Company>LumaCoreTech</Company>
-		<Product>LumaCore</Product>
+		<Product>OllamaProxy</Product>
 		<Authors>LumaCoreTech</Authors>
-		<RepositoryUrl>https://github.com/LumaCoreTech/LumaCore</RepositoryUrl>
+		<RepositoryUrl>https://github.com/LumaCoreTech/OllamaProxy</RepositoryUrl>
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 	</PropertyGroup>
