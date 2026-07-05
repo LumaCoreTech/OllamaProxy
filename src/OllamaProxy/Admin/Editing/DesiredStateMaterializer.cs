@@ -28,10 +28,10 @@ namespace OllamaProxy.Admin.Editing;
 ///     pre-empting it. All domain validation stays in the dry-run.
 ///     </para>
 ///     <para>
-///     <b>The only guard here is structural.</b> A backend's <see cref="DesiredBackend.Name"/> becomes its key in
-///     <see cref="ProxyOptions.Backends"/>. So a blank or duplicate name is a defect the dry-run cannot catch. (A
-///     duplicate would silently overwrite a sibling before the configuration is ever validated.) Those two cases
-///     throw. Every other rule (URL shape, provider support, key length, per-model rules) is left to the
+///     <b>The only guard here is structural.</b> A backend's trimmed <see cref="DesiredBackend.Name"/> becomes its
+///     key in <see cref="ProxyOptions.Backends"/>. So a blank or duplicate name is a defect the dry-run cannot
+///     catch. (A duplicate would silently overwrite a sibling before the configuration is ever validated.) Those
+///     two cases throw. Every other rule (URL shape, provider support, key length, per-model rules) is left to the
 ///     recycle's dry-run.
 ///     </para>
 ///     <para>
@@ -48,7 +48,7 @@ static class DesiredStateMaterializer
 	/// <summary>
 	/// Materializes the whole editor draft into a <see cref="ProxyOptions"/>. Each <see cref="DesiredBackend"/>
 	/// becomes a <see cref="BackendOptions"/> with its write-only key resolved against
-	/// <paramref name="currentBackends"/> and keyed by its logical name. The draft's
+	/// <paramref name="currentBackends"/> and keyed by its trimmed logical name. The draft's
 	/// <see cref="DesiredProxyState.RequestTracing"/> is carried forward verbatim.
 	/// </summary>
 	/// <param name="state">The editor draft to materialize.</param>
@@ -58,15 +58,15 @@ static class DesiredStateMaterializer
 	/// entry is gone) simply keeps its draft key.
 	/// </param>
 	/// <returns>
-	/// The materialized configuration: backends keyed case-insensitively by name (matching the binding contract)
-	/// with resolved keys, plus the draft's request tracing.
+	/// The materialized configuration: backends keyed case-insensitively by trimmed name (matching the binding
+	/// contract) with resolved keys, plus the draft's request tracing.
 	/// </returns>
 	/// <exception cref="ArgumentNullException">
 	/// <paramref name="state"/> or <paramref name="currentBackends"/> is <see langword="null"/>.
 	/// </exception>
 	/// <exception cref="ArgumentException">
-	/// A backend in <paramref name="state"/> has a blank <see cref="DesiredBackend.Name"/>, or two backends share
-	/// a name (compared case-insensitively, as the routing layer keys them).
+	/// A backend in <paramref name="state"/> has a blank <see cref="DesiredBackend.Name"/>, or two backends share a
+	/// trimmed name (compared case-insensitively, as the routing layer keys them).
 	/// </exception>
 	public static ProxyOptions Materialize(
 		DesiredProxyState                   state,
@@ -75,8 +75,9 @@ static class DesiredStateMaterializer
 		ArgumentNullException.ThrowIfNull(state);
 		ArgumentNullException.ThrowIfNull(currentBackends);
 
-		// Key case-insensitively so the materialized map matches ProxyOptions.Backends' binding contract. It also
-		// lets duplicate detection catch names that differ only in case, which collide in the routing layer too.
+		// Key trimmed names case-insensitively so the materialized map matches ProxyOptions.Backends' binding
+		// contract. It also lets duplicate detection catch names that differ only in surrounding whitespace or case,
+		// which collide in the routing layer too.
 		Dictionary<string, BackendOptions> backends = new(StringComparer.OrdinalIgnoreCase);
 
 		foreach (DesiredBackend desired in state.Backends)
@@ -90,10 +91,11 @@ static class DesiredStateMaterializer
 					nameof(state));
 			}
 
-			if (!backends.TryAdd(desired.Name, MaterializeBackend(desired, currentBackends)))
+			string name = desired.Name.Trim();
+			if (!backends.TryAdd(name, MaterializeBackend(desired, currentBackends)))
 			{
 				throw new ArgumentException(
-					$"The desired state contains more than one backend named '{desired.Name}'.",
+					$"The desired state contains more than one backend named '{name}'.",
 					nameof(state));
 			}
 		}

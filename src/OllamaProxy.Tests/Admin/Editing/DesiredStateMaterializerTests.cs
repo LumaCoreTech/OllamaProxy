@@ -7,35 +7,48 @@ using OllamaProxy.Configuration;
 
 namespace OllamaProxy.Tests.Admin.Editing;
 
-// Bridging the admin editor's draft and the real ProxyOptions in both directions: the forward path performs the
-// two transformations the draft cannot express on its own, and the reverse path projects the live options back
-// into a safe, editable draft.
-//
-// These tests follow the materializer's three public members, building from the per-backend unit up through the
-// whole-state orchestration that composes it, then back down the reverse projection:
-//
-//   1. MaterializeBackend — the write-only key resolution that is the materializer's whole reason to exist.
-//      A blank field means "keep the saved secret", recovered from the snapshot by OriginalName so a rename
-//      cannot drop it; a non-blank field is an explicit replacement; a new or vanished backend keeps the blank
-//      field for the dry-run to reject. The matrix lives in one Theory (ResolvesApiKey); a separate fact proves
-//      every other backend option is carried forward untouched (PreservesOtherOptions), and the two null guards
-//      close the region.
-//
-//   2. Materialize — the orchestration: each draft backend becomes a BackendOptions keyed by its logical name,
-//      the request tracing is carried forward verbatim, and an empty draft yields an empty map. The two
-//      structural guards the dry-run cannot catch — a blank name and a duplicate name (including one that
-//      differs only in case) — throw here. The two null guards close the region.
-//
-//   3. Dematerialize — the reverse projection: each live backend becomes a draft keyed by its current name
-//      (recorded as both Name and OriginalName so a later rename can still recover the secret), the API key is
-//      blanked so a secret never reaches the browser (BlanksApiKey), every other option is carried forward
-//      (CopiesEveryOtherOption), and every mutable member is deep-copied so editing the draft cannot mutate the
-//      live snapshot (DeepCopiesProbing, DeepCopiesRegistry, DeepCopiesTracing). Order is preserved
-//      (PreservesEnumerationOrder), an empty configuration yields an empty draft (WhenNoBackends), and the one
-//      null guard closes the region.
-//
-// For the per-backend key field-copy these tests lean on, see BackendOptions.WithApiKey; for the apply path the
-// materialized state flows into, see AdminModelServiceTests (ApplyDesiredStateAsync).
+/// <summary>
+/// Tests for <see cref="DesiredStateMaterializer"/>, bridging the admin editor's draft and the real
+/// <see cref="ProxyOptions"/> in both directions: the forward path performs the two transformations the draft
+/// cannot express on its own, and the reverse path projects the live options back into a safe, editable draft.
+/// </summary>
+/// <remarks>
+/// These tests follow the materializer's three public members, building from the per-backend unit up through the
+/// whole-state orchestration that composes it, then back down the reverse projection:
+/// <list type="number">
+///     <item>
+///         <description>
+///         <c>MaterializeBackend()</c> — the write-only key resolution that is the materializer's whole reason to
+///         exist. A blank field means "keep the saved secret", recovered from the snapshot by OriginalName so a
+///         rename cannot drop it; a non-blank field is an explicit replacement; a new or vanished backend keeps
+///         the blank field for the dry-run to reject. The matrix lives in one Theory (ResolvesApiKey); a separate
+///         fact proves every other backend option is carried forward untouched (PreservesOtherOptions), and the
+///         two null guards close the region.
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         <c>Materialize()</c> — the orchestration: each draft backend becomes a BackendOptions keyed by its
+///         logical name, the request tracing is carried forward verbatim, and an empty draft yields an empty map.
+///         The two structural guards the dry-run cannot catch — a blank name and a duplicate name (including one
+///         that differs only in case) — throw here. The two null guards close the region.
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         <c>Dematerialize()</c> — the reverse projection: each live backend becomes a draft keyed by its current
+///         name (recorded as both Name and OriginalName so a later rename can still recover the secret), the API
+///         key is blanked so a secret never reaches the browser (BlanksApiKey), every other option is carried
+///         forward (CopiesEveryOtherOption), and every mutable member is deep-copied so editing the draft cannot
+///         mutate the live snapshot (DeepCopiesProbing, DeepCopiesRegistry, DeepCopiesTracing). Order is preserved
+///         (PreservesEnumerationOrder), an empty configuration yields an empty draft (WhenNoBackends), and the one
+///         null guard closes the region.
+///         </description>
+///     </item>
+/// </list>
+/// For the per-backend key field-copy these tests lean on, see BackendOptions.WithApiKey; for the apply path the
+/// materialized state flows into, see <see cref="AdminModelServiceTests"/> (ApplyDesiredStateAsync()).
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class DesiredStateMaterializerTests
 {
@@ -254,6 +267,28 @@ public sealed class DesiredStateMaterializerTests
 	}
 
 	/// <summary>
+	/// Verifies that <see cref="DesiredStateMaterializer.Materialize"/> trims each backend name before keying the
+	/// materialized <see cref="ProxyOptions.Backends"/> map, matching the structural validator's duplicate-name
+	/// contract.
+	/// </summary>
+	[Fact]
+	public void Materialize_WhenBackendNameHasOuterWhitespace_UsesTrimmedNameAsMapKey()
+	{
+		// Arrange
+		DesiredProxyState state = State(
+			new RequestTracingOptions(),
+			Draft("  cloud  ", originalName: null, OptionsWithKey("entered-key-1234")));
+
+		// Act
+		ProxyOptions result = DesiredStateMaterializer.Materialize(state, EmptySnapshot());
+
+		// Assert
+		KeyValuePair<string, BackendOptions> backend = Assert.Single(result.Backends);
+		Assert.Equal("cloud", backend.Key);
+		Assert.False(result.Backends.ContainsKey("  cloud  "));
+	}
+
+	/// <summary>
 	/// Verifies that <see cref="DesiredStateMaterializer.Materialize"/> produces an empty backend map for a draft
 	/// with no backends — the degenerate case of an operator assembling a configuration from scratch, which is a
 	/// valid state: the proxy starts with no models until a backend is added.
@@ -288,7 +323,7 @@ public sealed class DesiredStateMaterializerTests
 		var exception = Assert.Throws<ArgumentException>(() =>
 			DesiredStateMaterializer.Materialize(state, EmptySnapshot()));
 		Assert.Equal("state", exception.ParamName);
-		Assert.StartsWith("A backend in the desired state has a blank name.", exception.Message);
+		AssertCustomArgumentMessage("A backend in the desired state has a blank name.", exception);
 	}
 
 	/// <summary>
@@ -308,7 +343,7 @@ public sealed class DesiredStateMaterializerTests
 		var exception = Assert.Throws<ArgumentException>(() =>
 			DesiredStateMaterializer.Materialize(state, SnapshotWith("cloud", SavedKey)));
 		Assert.Equal("state", exception.ParamName);
-		Assert.StartsWith("The desired state contains more than one backend named 'cloud'.", exception.Message);
+		AssertCustomArgumentMessage("The desired state contains more than one backend named 'cloud'.", exception);
 	}
 
 	/// <summary>
@@ -328,7 +363,27 @@ public sealed class DesiredStateMaterializerTests
 		var exception = Assert.Throws<ArgumentException>(() =>
 			DesiredStateMaterializer.Materialize(state, SnapshotWith("Cloud", SavedKey)));
 		Assert.Equal("state", exception.ParamName);
-		Assert.StartsWith("The desired state contains more than one backend named 'cloud'.", exception.Message);
+		AssertCustomArgumentMessage("The desired state contains more than one backend named 'cloud'.", exception);
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="DesiredStateMaterializer.Materialize"/> treats two names that differ only by outer
+	/// whitespace as duplicates because both materialize to the same trimmed map key.
+	/// </summary>
+	[Fact]
+	public void Materialize_WhenDuplicateNamesDifferOnlyByWhitespace_ThrowsArgumentException()
+	{
+		// Arrange
+		DesiredProxyState state = State(
+			new RequestTracingOptions(),
+			Draft("cloud", originalName: "cloud", OptionsWithKey("first-key-12345")),
+			Draft(" cloud ", originalName: null, OptionsWithKey("second-key-1234")));
+
+		// Act + Assert
+		var exception = Assert.Throws<ArgumentException>(() =>
+			DesiredStateMaterializer.Materialize(state, SnapshotWith("cloud", SavedKey)));
+		Assert.Equal("state", exception.ParamName);
+		AssertCustomArgumentMessage("The desired state contains more than one backend named 'cloud'.", exception);
 	}
 
 	/// <summary>
@@ -697,6 +752,21 @@ public sealed class DesiredStateMaterializerTests
 		}
 
 		return snapshot;
+	}
+
+	/// <summary>
+	/// Asserts the exact custom part of an <see cref="ArgumentException.Message"/> without asserting the localized
+	/// framework-added parameter suffix.
+	/// </summary>
+	/// <param name="expectedMessage">The custom production message expected at the start of the exception text.</param>
+	/// <param name="exception">The exception whose message should carry the custom production text.</param>
+	private static void AssertCustomArgumentMessage(string expectedMessage, ArgumentException exception)
+	{
+		string actualMessage = exception.Message.Length >= expectedMessage.Length
+			                       ? exception.Message[..expectedMessage.Length]
+			                       : exception.Message;
+
+		Assert.Equal(expectedMessage, actualMessage);
 	}
 
 	#endregion
