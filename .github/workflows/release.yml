@@ -78,10 +78,13 @@ jobs:
       uses: docker/metadata-action@v6
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        # 'latest' is intentionally NOT listed here: docker/metadata-action's default
+        # 'flavor: latest=auto' already emits it for stable (non-prerelease) semver tags.
+        # An explicit 'type=raw,value=latest' on top produced a duplicate 'latest' tag, and
+        # would also move 'latest' onto prerelease tags — which the 'v*' trigger allows.
         tags: |
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
-          type=raw,value=latest
 
     - name: Build and push image
       uses: docker/build-push-action@v7
