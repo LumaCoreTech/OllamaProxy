@@ -19,7 +19,7 @@ WORKDIR /src
 # Restore first so the layer is cached when only source files change.
 COPY src/Directory.Build.props \
      src/Directory.Build.targets \
-     src/Directory.Build.packages \
+     src/Directory.Packages.props \
      src/
 COPY src/OllamaProxy/OllamaProxy.csproj src/OllamaProxy/
 RUN dotnet restore src/OllamaProxy/OllamaProxy.csproj
