@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.0] - 2026-07-05
+## [0.1.0] - 2026-07-06
 
 Initial public preview. While on the `0.x` line the HTTP surface, configuration keys, and CLI
 may still change between minor versions per Semantic Versioning's pre-stable semantics.
