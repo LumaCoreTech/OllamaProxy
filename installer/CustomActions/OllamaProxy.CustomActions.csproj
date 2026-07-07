@@ -4,7 +4,7 @@
 
 <Project Sdk="Microsoft.NET.Sdk">
 
-    <!--
+	<!--
 		Managed Windows Installer custom actions for the OllamaProxy installer.
 
 		Targets .NET Framework 4.7.2 because the WiX DTF custom-action host (MakeSfxCA) wraps a managed
@@ -37,48 +37,48 @@
 		<AssemblyName>OllamaProxy.CustomActions</AssemblyName>
 	</PropertyGroup>
 
-    <!--
+	<!--
 		Build everything below only on Windows. The Condition on the ItemGroups keeps the project file
 		valid (and restorable) on Linux while contributing no Windows-only package references there.
 	-->
-    <ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
-        <PackageReference Include="WixToolset.Dtf.CustomAction" />
-        <PackageReference Include="WixToolset.Dtf.WindowsInstaller" />
-        <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies">
-            <PrivateAssets>all</PrivateAssets>
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-        </PackageReference>
-    </ItemGroup>
+	<ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+		<PackageReference Include="WixToolset.Dtf.CustomAction" />
+		<PackageReference Include="WixToolset.Dtf.WindowsInstaller" />
+		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
 
-    <ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
-        <Reference Include="System.Net.Http" />
-    </ItemGroup>
+	<ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+		<Reference Include="System.Net.Http" />
+	</ItemGroup>
 
-    <!--
+	<!--
         Expose internal members to the Windows-only unit-test project so the pure helpers (config-write
         policy, endpoint parsing, JSON building/escaping, response interpretation) can be tested directly
         on the same net472 target they ship on. Windows-only because the test project itself only exists
         on the Windows leg; on Linux the custom action neutralizes to a no-op and has no test consumer.
     -->
-    <ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
-        <InternalsVisibleTo Include="OllamaProxy.CustomActions.Tests" />
-    </ItemGroup>
+	<ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+		<InternalsVisibleTo Include="OllamaProxy.CustomActions.Tests" />
+	</ItemGroup>
 
-    <!--
+	<!--
 		The CLR host config MakeSfxCA embeds beside the packaged assembly. As <Content> it flows through
 		the DTF PackCustomAction target (which forwards @(Content) to MakeSfxCA) and pins the CA host to
 		CLR 4.0; without it the stub loads the oldest runtime (v2.0) and fails net472 with error 1603.
 		Windows-only because MakeSfxCA runs only on the Windows leg; copying it to the output is pointless.
 	-->
-    <ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
-        <Content Include="CustomAction.config">
-            <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-        </Content>
-    </ItemGroup>
+	<ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
+		<Content Include="CustomAction.config">
+			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
 
-    <!-- On non-Windows hosts, exclude the sources so the empty project restores and "builds" cleanly. -->
-    <ItemGroup Condition="'$(IsWindowsHost)' != 'true'">
-        <Compile Remove="**\*.cs" />
-    </ItemGroup>
+	<!-- On non-Windows hosts, exclude the sources so the empty project restores and "builds" cleanly. -->
+	<ItemGroup Condition="'$(IsWindowsHost)' != 'true'">
+		<Compile Remove="**\*.cs" />
+	</ItemGroup>
 
 </Project>
