@@ -1,4 +1,3 @@
-@using System.Diagnostics
 @using System.Globalization
 @using OllamaProxy.Admin.Reconciliation
 @using OllamaProxy.Configuration
@@ -302,7 +301,7 @@ else
 								<option value="">Inherit</option>
 								@foreach (ReasoningEffort effort in ReasoningEffortOptions)
 								{
-									<option value="@effort">@ReasoningEffortLabel(effort)</option>
+									<option value="@effort">@effort.ToDisplayLabel()</option>
 								}
 							</select>
 						</label>
@@ -687,21 +686,6 @@ else
 		string name = GetPinnedName(model);
 		return !string.IsNullOrWhiteSpace(name) && DuplicateModelNames.Contains(name.Trim());
 	}
-
-	/// <summary>
-	/// Maps a reasoning-effort level to its human-readable dropdown label.
-	/// </summary>
-	private static string ReasoningEffortLabel(ReasoningEffort effort) => effort switch
-	{
-		ReasoningEffort.None    => "None",
-		ReasoningEffort.Minimal => "Minimal",
-		ReasoningEffort.Low     => "Low",
-		ReasoningEffort.Medium  => "Medium",
-		ReasoningEffort.High    => "High",
-		ReasoningEffort.XHigh   => "Extra high",
-		ReasoningEffort.Max     => "Max",
-		var _                   => throw new UnreachableException($"Unhandled reasoning effort '{effort}'.")
-	};
 
 	/// <summary>
 	/// Gets a short, human-readable description of how a drifted pin diverges from the backend's reported

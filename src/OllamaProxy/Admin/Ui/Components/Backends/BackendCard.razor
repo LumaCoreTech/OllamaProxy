@@ -1,4 +1,3 @@
-@using System.Diagnostics
 @using OllamaProxy.Admin.Reconciliation
 @using OllamaProxy.Configuration
 @using OllamaProxy.Providers.Abstractions
@@ -15,9 +14,9 @@
 	        @onclick="OnToggleExpand"
 	        aria-expanded="@(Expanded.ToString().ToLowerInvariant())"
 	        aria-controls="@EditorPanelId"
-	        aria-label="@(Expanded ? $"Collapse {DisplayName(Backend)}" : $"Expand {DisplayName(Backend)}")">
+	        aria-label="@(Expanded ? $"Collapse {BackendCardPresenter.DisplayName(Backend)}" : $"Expand {BackendCardPresenter.DisplayName(Backend)}")">
 		<span class="backend-expand-indicator">@(Expanded ? "▾" : "▸")</span>
-		<span class="backend-card-name">@DisplayName(Backend)</span>
+		<span class="backend-card-name">@BackendCardPresenter.DisplayName(Backend)</span>
 		@* Provider-family label as a quiet neutral pill so the operator can tell one backend's provider family
 		   from another (say vLLM from OpenAI) in the collapsed list without expanding the card. Rendered through
 		   the shared Badge primitive, same as the mode pill below. Suppressed when the provider type resolves to
@@ -28,7 +27,7 @@
 		}
 		@* Operating-mode label as a quiet neutral pill, rendered through the shared Badge primitive so it shares
 		   one pill shape with the state and drift badges instead of re-declaring it locally. *@
-		<Badge Variant="BadgeVariant.Neutral" title="@ModeDescription(ProviderCatalog.ResolveMode(Backend.Options))">@ModeLabel(ProviderCatalog.ResolveMode(Backend.Options))</Badge>
+		<Badge Variant="BadgeVariant.Neutral" title="@BackendCardPresenter.ModeDescription(ProviderCatalog.ResolveMode(Backend.Options))">@BackendCardPresenter.ModeLabel(ProviderCatalog.ResolveMode(Backend.Options))</Badge>
 	</button>
 
 	@if (Expanded)
@@ -313,39 +312,5 @@
 	/// unknown provider type resolves to an empty string, and the header suppresses the pill in that case.
 	/// </summary>
 	private string ProviderLabel => ProviderCatalog.DisplayNameFor(Backend.Options.ProviderType);
-
-	/// <summary>
-	/// Gets a backend's display name for the card header, falling back to a placeholder when the operator
-	/// has not named it yet.
-	/// </summary>
-	private static string DisplayName(DesiredBackend backend) => string.IsNullOrWhiteSpace(backend.Name) ? "(unnamed backend)" : backend.Name;
-
-	/// <summary>
-	/// Maps a backend's effective operating mode to its human-readable badge label.
-	/// </summary>
-	private static string ModeLabel(OperatingMode mode) => mode switch
-	{
-		OperatingMode.PlugAndPlay => "Plug-and-play",
-		OperatingMode.Hybrid      => "Hybrid",
-		OperatingMode.Explicit    => "Explicit",
-		var _                     => throw new UnreachableException($"Unhandled operating mode '{mode}'.")
-	};
-
-	/// <summary>
-	/// Maps a backend's effective operating mode to a short tooltip description.
-	/// </summary>
-	private static string ModeDescription(OperatingMode mode) => mode switch
-	{
-		OperatingMode.PlugAndPlay =>
-			"Every model the backend reports is exposed automatically. Registry pins have no effect.",
-
-		OperatingMode.Hybrid =>
-			"Discovered models are exposed automatically, and registry entries override their settings or stand alone.",
-
-		OperatingMode.Explicit =>
-			"Only pinned registry models are exposed. Discovered models are listed as candidates.",
-
-		var _ => throw new UnreachableException($"Unhandled operating mode '{mode}'.")
-	};
 
 }

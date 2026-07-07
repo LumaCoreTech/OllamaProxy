@@ -61,8 +61,9 @@ public enum ReasoningEffort
 }
 
 /// <summary>
-/// Extension helpers translating a <see cref="ReasoningEffort"/> onto the canonical OpenAI
-/// <c>reasoning_effort</c> wire token shared by most OpenAI-compatible backends.
+/// Extension helpers translating a <see cref="ReasoningEffort"/> either onto the canonical OpenAI
+/// <c>reasoning_effort</c> wire token shared by most OpenAI-compatible backends, or onto the
+/// human-readable label the admin UI shows in its reasoning-effort selectors.
 /// </summary>
 static class ReasoningEffortExtensions
 {
@@ -84,6 +85,30 @@ static class ReasoningEffortExtensions
 		ReasoningEffort.High    => "high",
 		ReasoningEffort.XHigh   => "xhigh",
 		ReasoningEffort.Max     => "max",
+		// All defined enum values are handled above; an undefined value cannot occur through binding or parsing.
+		var _ => throw new UnreachableException($"Unhandled reasoning effort '{effort}'.")
+	};
+
+	/// <summary>
+	/// Returns the human-readable label for the supplied effort, as shown in the admin UI's
+	/// reasoning-effort selectors (for example <see cref="ReasoningEffort.XHigh"/> becomes
+	/// <c>Extra high</c>). Distinct from <see cref="ToWireValue"/>, which yields the lowercase provider
+	/// wire token; this is the display copy the operator reads.
+	/// </summary>
+	/// <param name="effort">The neutral effort to translate.</param>
+	/// <returns>The display label for the effort level.</returns>
+	/// <exception cref="UnreachableException">
+	/// <paramref name="effort"/> is not a defined <see cref="ReasoningEffort"/> value.
+	/// </exception>
+	public static string ToDisplayLabel(this ReasoningEffort effort) => effort switch
+	{
+		ReasoningEffort.None    => "None",
+		ReasoningEffort.Minimal => "Minimal",
+		ReasoningEffort.Low     => "Low",
+		ReasoningEffort.Medium  => "Medium",
+		ReasoningEffort.High    => "High",
+		ReasoningEffort.XHigh   => "Extra high",
+		ReasoningEffort.Max     => "Max",
 		// All defined enum values are handled above; an undefined value cannot occur through binding or parsing.
 		var _ => throw new UnreachableException($"Unhandled reasoning effort '{effort}'.")
 	};

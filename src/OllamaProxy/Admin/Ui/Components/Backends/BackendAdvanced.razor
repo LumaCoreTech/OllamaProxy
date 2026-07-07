@@ -1,4 +1,3 @@
-@using System.Diagnostics
 @using OllamaProxy.Configuration
 @* Copyright (c) 2026 LumaCoreTech *@
 @* SPDX-License-Identifier: MIT *@
@@ -65,7 +64,7 @@
 						<option value="">Unspecified (no directive)</option>
 						@foreach (ReasoningEffort effort in ReasoningEffortOptions)
 						{
-							<option value="@effort">@ReasoningEffortLabel(effort)</option>
+							<option value="@effort">@effort.ToDisplayLabel()</option>
 						}
 					</select>
 				</label>
@@ -243,22 +242,5 @@
 	/// </summary>
 	/// <returns>A task that completes when the parent has been notified.</returns>
 	private Task NotifyChanged() => OnConfigurationChanged.InvokeAsync();
-
-	/// <summary>
-	/// Maps a reasoning-effort level to its human-readable dropdown label.
-	/// </summary>
-	/// <param name="effort">The reasoning-effort level to label.</param>
-	/// <returns>The display label for the effort level.</returns>
-	private static string ReasoningEffortLabel(ReasoningEffort effort) => effort switch
-	{
-		ReasoningEffort.None    => "None",
-		ReasoningEffort.Minimal => "Minimal",
-		ReasoningEffort.Low     => "Low",
-		ReasoningEffort.Medium  => "Medium",
-		ReasoningEffort.High    => "High",
-		ReasoningEffort.XHigh   => "Extra high",
-		ReasoningEffort.Max     => "Max",
-		var _                   => throw new UnreachableException($"Unhandled reasoning effort '{effort}'.")
-	};
 
 }

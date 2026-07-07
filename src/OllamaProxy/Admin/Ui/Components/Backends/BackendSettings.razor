@@ -44,7 +44,7 @@
 			<input type="password"
 			       @bind="Backend.Options.ApiKey"
 			       @bind:after="NotifyChanged"
-			       placeholder="@ApiKeyPlaceholder(Backend)"
+			       placeholder="@BackendSettingsPresenter.ApiKeyPlaceholder(Backend)"
 			       disabled="@IsBusy"/>
 		</label>
 	</div>
@@ -126,14 +126,5 @@
 	/// </summary>
 	/// <returns>A task that completes when the parent has been notified.</returns>
 	private Task NotifyChanged() => OnConfigurationChanged.InvokeAsync();
-
-	/// <summary>
-	/// Gets the placeholder shown in the API-key field. An existing backend shows a "saved secret" hint (the
-	/// field is blank by the write-only contract, and leaving it blank keeps the saved key); a newly added
-	/// backend shows that a key is required.
-	/// </summary>
-	/// <param name="backend">The backend whose API-key field is being rendered.</param>
-	/// <returns>The placeholder text for the field.</returns>
-	private static string ApiKeyPlaceholder(DesiredBackend backend) => backend.OriginalName is null ? "Required" : "•••• saved — leave blank to keep";
 
 }

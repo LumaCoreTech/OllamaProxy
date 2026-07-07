@@ -882,7 +882,9 @@ public sealed class OpenAiCapabilityProberIntegrationTests
 		await handler.ToolThrottled;
 		var cooldownPublished = Stopwatch.StartNew();
 		while (!sut.HasActiveBackendCooldown(backend.Name) && cooldownPublished.Elapsed < TimeSpan.FromSeconds(5))
+		{
 			await Task.Delay(10);
+		}
 
 		Assert.True(
 			sut.HasActiveBackendCooldown(backend.Name),

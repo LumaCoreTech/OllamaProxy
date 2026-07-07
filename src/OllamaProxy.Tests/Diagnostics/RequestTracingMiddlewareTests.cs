@@ -22,7 +22,10 @@ namespace OllamaProxy.Tests.Diagnostics;
 /// the trace — and must do all of it without changing what the client sees. These tests follow that arc:
 /// <list type="number">
 ///     <item>
-///         <description>Disabled: tracing off is a pure pass-through; next runs and nothing is persisted (WhenTracingDisabled).</description>
+///         <description>
+///         Disabled: tracing off is a pure pass-through; next runs and nothing is persisted
+///         (WhenTracingDisabled).
+///         </description>
 ///     </item>
 ///     <item>
 ///         <description>
