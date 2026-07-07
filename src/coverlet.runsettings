@@ -6,7 +6,14 @@
             <DataCollector friendlyName="XPlat Code Coverage">
                 <Configuration>
                     <Format>cobertura</Format>
-                    <ExcludeByAttribute>DebuggerNonUserCode,GeneratedCodeAttribute,ExcludeFromCodeCoverage</ExcludeByAttribute>
+                    <!--
+                        GeneratedCodeAttribute is intentionally NOT listed. Under the XPlat Code Coverage
+                        collector (coverlet.collector) it excludes the entire app assembly, producing an
+                        empty 0% cobertura report. DebuggerNonUserCode and ExcludeFromCodeCoverage behave
+                        normally. Comma-separated values are the documented format for both the collector
+                        and coverlet.msbuild.
+                    -->
+                    <ExcludeByAttribute>DebuggerNonUserCode,ExcludeFromCodeCoverage</ExcludeByAttribute>
                     <IncludeTestAssembly>false</IncludeTestAssembly>
                 </Configuration>
             </DataCollector>

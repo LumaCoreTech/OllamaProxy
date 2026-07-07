@@ -50,6 +50,7 @@ jobs:
         dotnet test OllamaProxy.slnx -c Release --no-build --verbosity normal
         --logger "trx;LogFileName=test-results.trx"
         --collect:"XPlat Code Coverage"
+        --settings src/coverlet.runsettings
         --results-directory ./artifacts/test-results
 
     - name: Test Report

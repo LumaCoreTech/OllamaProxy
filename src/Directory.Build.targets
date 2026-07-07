@@ -56,10 +56,16 @@
 		Coverage report defaults for all test projects.
 		Active only when coverage is collected via coverlet.msbuild
 		(e.g. `dotnet test /p:CollectCoverage=true`).
+
+		GeneratedCodeAttribute is intentionally NOT listed, mirroring the collector
+		settings in coverlet.runsettings: it empties the whole-assembly report under
+		coverlet.collector, so excluding it here too keeps the msbuild and collector
+		paths measuring the same code. %2c is the URL-encoded comma required to pass a
+		list value through the MSBuild /p: command line.
 	-->
 	<PropertyGroup Condition="'$(IsTestProject)' == 'true' and '$(CollectCoverage)' == 'true'">
 		<CoverletOutputFormat>cobertura</CoverletOutputFormat>
-		<ExcludeByAttribute>DebuggerNonUserCode%2cGeneratedCodeAttribute%2cExcludeFromCodeCoverage</ExcludeByAttribute>
+		<ExcludeByAttribute>DebuggerNonUserCode%2cExcludeFromCodeCoverage</ExcludeByAttribute>
 	</PropertyGroup>
 
 </Project>
