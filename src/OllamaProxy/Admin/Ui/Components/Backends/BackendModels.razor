@@ -1,7 +1,6 @@
 @using System.Globalization
 @using OllamaProxy.Admin.Reconciliation
 @using OllamaProxy.Configuration
-@using OllamaProxy.Providers.Abstractions
 @* Copyright (c) 2026 LumaCoreTech *@
 @* SPDX-License-Identifier: MIT *@
 @* Project: https://github.com/LumaCoreTech/OllamaProxy *@
@@ -314,7 +313,7 @@ else
 										   is passed: the badge is the cell's only content and the cell's own padding
 										   spaces it, and a class here would land in Badge's scope (not this one) while
 										   also overriding the primitive's own class attribute. *@
-							<Badge Variant="BadgeVariant.Warning" title="@DriftSummary(model)">Drifted</Badge>
+							<Badge Variant="BadgeVariant.Warning" title="@BackendModelsPresenter.DriftSummary(model)">Drifted</Badge>
 						}
 					</td>
 					<td>
@@ -421,7 +420,7 @@ else
 							<span class="model-reported-none">—</span>
 						}
 					</td>
-					<td>@ContextSummary(model.ContextLength)</td>
+					<td>@BackendModelsPresenter.ContextSummary(model.ContextLength)</td>
 				</tr>
 			}
 
@@ -467,7 +466,7 @@ else
 										<dd>@maxCompletion.ToString("N0", CultureInfo.InvariantCulture)</dd>
 									</div>
 								}
-								@if (PriceSummary(detail) is { Length: > 0 } price)
+								@if (BackendModelsPresenter.PriceSummary(detail) is { Length: > 0 } price)
 								{
 									<div class="model-detail-field">
 										<dt>Pricing (per 1M tokens)</dt>
@@ -681,51 +680,11 @@ else
 	/// <see langword="true"/> if <paramref name="model"/>'s trimmed name is one of the backend's
 	/// <see cref="DuplicateModelNames"/>; otherwise <see langword="false"/>.
 	/// </returns>
-	private bool IsDuplicateName(ReconciledModel model)
-	{
-		string name = GetPinnedName(model);
-		return !string.IsNullOrWhiteSpace(name) && DuplicateModelNames.Contains(name.Trim());
-	}
-
-	/// <summary>
-	/// Gets a short, human-readable description of how a drifted pin diverges from the backend's reported
-	/// shape, naming the capability and context differences so the operator can see what the pin still overrides.
-	/// </summary>
-	private static string DriftSummary(ReconciledModel model)
-	{
-		List<string> parts = [];
-
-		if (model.HasCapabilityDrift)
-		{
-			parts.Add($"capabilities are pinned as {CapabilitySummary(model.Capabilities)}, but the backend reports {CapabilitySummary(model.DiscoveredCapabilities)}");
-		}
-
-		if (model.HasContextDrift)
-		{
-			parts.Add($"context is pinned as {ContextSummary(model.ContextLength)}, but the backend reports {ContextSummary(model.DiscoveredContextLength)}");
-		}
-
-		return parts.Count > 0
-			       ? $"Pinned settings differ from the backend: {string.Join("; ", parts)}."
-			       : "Pinned settings differ from what the backend reports.";
-	}
-
-	/// <summary>
-	/// Gets a compact, comma-separated list of the capabilities a model supports, or a placeholder when none
-	/// are known or none are enabled.
-	/// </summary>
-	private static string CapabilitySummary(ModelCapabilities? capabilities)
-	{
-		if (capabilities is null) return "—";
-
-		List<string> flags = [];
-		if (capabilities.SupportsCompletion) flags.Add("completion");
-		if (capabilities.SupportsTools) flags.Add("tools");
-		if (capabilities.SupportsVision) flags.Add("vision");
-		if (capabilities.SupportsEmbeddings) flags.Add("embeddings");
-
-		return flags.Count > 0 ? string.Join(", ", flags) : "none";
-	}
+	/// <remarks>
+	/// Binds the component's <see cref="GetPinnedName"/> closure and <see cref="DuplicateModelNames"/> parameter
+	/// to the pure <see cref="BackendModelsPresenter.IsDuplicateName"/> check.
+	/// </remarks>
+	private bool IsDuplicateName(ReconciledModel model) => BackendModelsPresenter.IsDuplicateName(GetPinnedName(model), DuplicateModelNames);
 
 	/// <summary>
 	/// Gets a stable identifier for a model's detail panel so the toggle button can reference it with
@@ -734,41 +693,10 @@ else
 	/// </summary>
 	/// <param name="rowIndex">The model row index in the current reconciliation table.</param>
 	/// <returns>A detail panel id unique to the model within this backend.</returns>
-	private string GetModelDetailPanelId(int rowIndex) => $"backend-model-detail-{mComponentId}-{rowIndex.ToString(CultureInfo.InvariantCulture)}";
-
-	/// <summary>
-	/// Gets a human-readable context-window value, formatting the token count with thousands separators or a
-	/// placeholder when none could be resolved.
-	/// </summary>
-	private static string ContextSummary(long? contextLength) => contextLength is { } tokens
-		                                                             ? tokens.ToString("N0", CultureInfo.InvariantCulture)
-		                                                             : "—";
-
-	/// <summary>
-	/// Formats a model's normalized per-million-token pricing for display, emitting an input/output pair when
-	/// both are known, a single labeled figure when only one is, or an empty string when the backend reported
-	/// no price.
-	/// </summary>
-	private static string PriceSummary(ProviderModelMetadata metadata)
-	{
-		string? input = FormatUsd(metadata.PromptUsdPerMillionTokens);
-		string? output = FormatUsd(metadata.CompletionUsdPerMillionTokens);
-
-		return (input, output) switch
-		{
-			({ } i, { } o) => $"in {i} · out {o}",
-			({ } i, null)  => $"in {i}",
-			(null, { } o)  => $"out {o}",
-			var _          => string.Empty
-		};
-	}
-
-	/// <summary>
-	/// Formats a USD amount with enough precision for the small per-token fractions, or <see langword="null"/>
-	/// when the amount is absent.
-	/// </summary>
-	private static string? FormatUsd(decimal? amount) => amount is { } value
-		                                                     ? "$" + value.ToString(value < 1m ? "0.####" : "0.00", CultureInfo.InvariantCulture)
-		                                                     : null;
+	/// <remarks>
+	/// Binds the component's per-instance <see cref="mComponentId"/> to the pure
+	/// <see cref="BackendModelsPresenter.ModelDetailPanelId"/> builder.
+	/// </remarks>
+	private string GetModelDetailPanelId(int rowIndex) => BackendModelsPresenter.ModelDetailPanelId(mComponentId, rowIndex);
 
 }
