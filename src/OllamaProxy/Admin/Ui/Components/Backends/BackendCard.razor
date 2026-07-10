@@ -38,7 +38,7 @@
 			<BackendSettings
 				Backend="Backend"
 				Providers="ProviderCatalog.Providers"
-				IsBusy="IsBusy"
+				IsBusy="EditorBusy"
 				OnProviderTypeChanged="OnProviderTypeChanged"
 				OnModeChanged="OnModeChanged"
 				OnConfigurationChanged="OnConfigurationChanged"/>
@@ -51,6 +51,7 @@
 				Backend="Backend"
 				Expanded="AdvancedExpanded"
 				IsBusy="IsBusy"
+				FieldsBusy="EditorBusy"
 				OnToggle="OnAdvancedToggle"
 				OnModelPrefixChanged="OnModelPrefixChanged"
 				OnConfigurationChanged="OnConfigurationChanged"/>
@@ -131,8 +132,10 @@
 	public bool AdvancedExpanded { get; set; }
 
 	/// <summary>
-	/// Whether the page is currently busy with a load or apply. Mirrored to every interactive control
-	/// in the card so the editor disables itself as a whole.
+	/// Whether the page is globally busy with a load or apply. It gates the card's page-scoped controls
+	/// directly (the Remove button, the models table's own busy handling, and the advanced disclosure header),
+	/// and is folded together with this backend's in-flight fetch/probe into <see cref="EditorBusy"/> for the
+	/// editable settings and advanced fields.
 	/// </summary>
 	[Parameter]
 	public bool IsBusy { get; set; }
@@ -312,5 +315,16 @@
 	/// unknown provider type resolves to an empty string, and the header suppresses the pill in that case.
 	/// </summary>
 	private string ProviderLabel => ProviderCatalog.DisplayNameFor(Backend.Options.ProviderType);
+
+	/// <summary>
+	/// Gets whether the editable settings and advanced fields are locked. It folds the page-global
+	/// <see cref="IsBusy"/> together with this backend's in-flight fetch or probe
+	/// (<see cref="ModelListState.IsFetching"/>): a running probe freezes the very connection and probing
+	/// settings that configure it, so an edit cannot race a stream that is already using the old values. It is
+	/// deliberately <em>not</em> forwarded to <see cref="BackendModels"/> — that component owns the fetch
+	/// controls and must keep its Cancel button live while <see cref="ModelListState.IsFetching"/> holds, so it
+	/// gates on page-global <see cref="IsBusy"/> alone.
+	/// </summary>
+	private bool EditorBusy => IsBusy || State.IsFetching;
 
 }

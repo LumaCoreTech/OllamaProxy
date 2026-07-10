@@ -29,10 +29,10 @@
 					<input type="number"
 					       min="1"
 					       step="1"
-					       @bind="Backend.Options.ContextLength"
-					       @bind:after="NotifyChanged"
-					       placeholder="Backend default"
-					       disabled="@IsBusy"/>
+						   @bind="Backend.Options.ContextLength"
+						   @bind:after="NotifyChanged"
+						   placeholder="Backend default"
+						   disabled="@FieldsBusy"/>
 				</label>
 				<p class="backend-field-hint">
 					Fallback context window in tokens for auto-exposed models. The value a backend reports always
@@ -46,9 +46,9 @@
 					Model prefix
 					<input type="text"
 					       @bind:get="Backend.Options.ModelPrefix"
-					       @bind:set="value => OnModelPrefixChanged.InvokeAsync(value)"
-					       placeholder="e.g. vllm"
-					       disabled="@IsBusy"/>
+						   @bind:set="value => OnModelPrefixChanged.InvokeAsync(value)"
+						   placeholder="e.g. vllm"
+						   disabled="@FieldsBusy"/>
 				</label>
 				<p class="backend-field-hint">
 					Applied to every exposed model name as <code>prefix/model</code> to disambiguate the same
@@ -60,7 +60,7 @@
 			<div class="backend-field">
 				<label>
 					Default reasoning effort
-					<select @bind="Backend.Options.ReasoningEffort" @bind:after="NotifyChanged" disabled="@IsBusy">
+					<select @bind="Backend.Options.ReasoningEffort" @bind:after="NotifyChanged" disabled="@FieldsBusy">
 						<option value="">Unspecified (no directive)</option>
 						@foreach (ReasoningEffort effort in ReasoningEffortOptions)
 						{
@@ -84,24 +84,24 @@
 				<div class="backend-probing-toggles">
 					<label class="backend-check">
 						<input type="checkbox"
-						       @bind="Backend.Options.Probing.ProbeCompletion"
-						       @bind:after="NotifyChanged"
-						       disabled="@IsBusy"/>
+							   @bind="Backend.Options.Probing.ProbeCompletion"
+							   @bind:after="NotifyChanged"
+							   disabled="@FieldsBusy"/>
 						Completion
 					</label>
 					<label class="backend-check">
-						<input type="checkbox" @bind="Backend.Options.Probing.ProbeTools" @bind:after="NotifyChanged" disabled="@IsBusy"/>
+						<input type="checkbox" @bind="Backend.Options.Probing.ProbeTools" @bind:after="NotifyChanged" disabled="@FieldsBusy"/>
 						Tools
 					</label>
 					<label class="backend-check">
-						<input type="checkbox" @bind="Backend.Options.Probing.ProbeVision" @bind:after="NotifyChanged" disabled="@IsBusy"/>
+						<input type="checkbox" @bind="Backend.Options.Probing.ProbeVision" @bind:after="NotifyChanged" disabled="@FieldsBusy"/>
 						Vision
 					</label>
 					<label class="backend-check">
 						<input type="checkbox"
-						       @bind="Backend.Options.Probing.ProbeEmbeddings"
-						       @bind:after="NotifyChanged"
-						       disabled="@IsBusy"/>
+							   @bind="Backend.Options.Probing.ProbeEmbeddings"
+							   @bind:after="NotifyChanged"
+							   disabled="@FieldsBusy"/>
 						Embeddings
 					</label>
 				</div>
@@ -113,9 +113,9 @@
 						       min="@CapabilityProbingOptions.MinimumTimeoutSeconds"
 						       max="@CapabilityProbingOptions.MaximumTimeoutSeconds"
 						       step="1"
-						       @bind="Backend.Options.Probing.TimeoutSeconds"
-						       @bind:after="NotifyChanged"
-						       disabled="@IsBusy"/>
+							   @bind="Backend.Options.Probing.TimeoutSeconds"
+							   @bind:after="NotifyChanged"
+							   disabled="@FieldsBusy"/>
 					</label>
 					<label>
 						Interactive timeout (s)
@@ -123,9 +123,9 @@
 						       min="@CapabilityProbingOptions.MinimumInteractiveTimeoutSeconds"
 						       max="@CapabilityProbingOptions.MaximumInteractiveTimeoutSeconds"
 						       step="1"
-						       @bind="Backend.Options.Probing.InteractiveTimeoutSeconds"
-						       @bind:after="NotifyChanged"
-						       disabled="@IsBusy"/>
+							   @bind="Backend.Options.Probing.InteractiveTimeoutSeconds"
+							   @bind:after="NotifyChanged"
+							   disabled="@FieldsBusy"/>
 					</label>
 					<label>
 						Max retries
@@ -133,9 +133,9 @@
 						       min="@CapabilityProbingOptions.MinimumMaxProbeRetries"
 						       max="@CapabilityProbingOptions.MaximumMaxProbeRetries"
 						       step="1"
-						       @bind="Backend.Options.Probing.MaxProbeRetries"
-						       @bind:after="NotifyChanged"
-						       disabled="@IsBusy"/>
+							   @bind="Backend.Options.Probing.MaxProbeRetries"
+							   @bind:after="NotifyChanged"
+							   disabled="@FieldsBusy"/>
 					</label>
 					<label>
 						Retry base delay (s)
@@ -143,9 +143,9 @@
 						       min="@CapabilityProbingOptions.MinimumRetryBaseDelaySeconds"
 						       max="@CapabilityProbingOptions.MaximumRetryBaseDelaySeconds"
 						       step="1"
-						       @bind="Backend.Options.Probing.RetryBaseDelaySeconds"
-						       @bind:after="NotifyChanged"
-						       disabled="@IsBusy"/>
+							   @bind="Backend.Options.Probing.RetryBaseDelaySeconds"
+							   @bind:after="NotifyChanged"
+							   disabled="@FieldsBusy"/>
 					</label>
 					<label>
 						Max concurrent probes
@@ -153,9 +153,9 @@
 						       min="@CapabilityProbingOptions.MinimumMaxConcurrentProbes"
 						       max="@CapabilityProbingOptions.MaximumMaxConcurrentProbes"
 						       step="1"
-						       @bind="Backend.Options.Probing.MaxConcurrentProbes"
-						       @bind:after="NotifyChanged"
-						       disabled="@IsBusy"/>
+							   @bind="Backend.Options.Probing.MaxConcurrentProbes"
+							   @bind:after="NotifyChanged"
+							   disabled="@FieldsBusy"/>
 					</label>
 				</div>
 			</fieldset>
@@ -204,11 +204,25 @@
 	private string AdvancedBodyId { get; } = $"backend-advanced-{Guid.NewGuid():N}";
 
 	/// <summary>
-	/// Whether the page is currently busy with a load or apply. Mirrored to every interactive control so the
-	/// editor disables itself as a whole.
+	/// Whether the page is globally busy with a load or apply. This gates only the disclosure <em>header</em>
+	/// toggle, so the operator cannot expand or collapse the section while the whole page is mid-operation. The
+	/// fields inside the disclosure are gated separately by <see cref="FieldsBusy"/>, which additionally covers
+	/// a per-backend probe: during a probe the header stays operable (so the section can be opened to watch the
+	/// probe fill in) while the fields lock.
 	/// </summary>
 	[Parameter]
 	public bool IsBusy { get; set; }
+
+	/// <summary>
+	/// Whether the editable fields inside the disclosure (context length, model prefix, reasoning effort, and
+	/// every capability-probing toggle and knob) are locked. Distinct from <see cref="IsBusy"/> — which gates
+	/// only the header toggle — because a running per-backend probe must freeze the very settings that configure
+	/// it while still letting the operator open the section. The page composes this as "globally busy or this
+	/// backend is fetching/probing", so it is a superset of <see cref="IsBusy"/>: whenever the header is locked
+	/// the fields are locked too.
+	/// </summary>
+	[Parameter]
+	public bool FieldsBusy { get; set; }
 
 	/// <summary>
 	/// Fired when the operator clicks the disclosure header. The page toggles its per-backend membership set
