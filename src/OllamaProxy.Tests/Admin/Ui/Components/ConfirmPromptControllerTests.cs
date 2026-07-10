@@ -11,24 +11,43 @@ namespace OllamaProxy.Tests.Admin.Ui.Components;
 /// <see cref="ConfirmDialog"/> and both confirmation styles: fire-and-forget prompts via
 /// <see cref="ConfirmPromptController.Request"/> and await-for-decision gates via
 /// <see cref="ConfirmPromptController.RequestAsync"/>.
-/// 
-/// The tests follow the lifecycle of a single prompt slot, from opening through resolution to teardown:
-/// 
-/// 1. Empty state: no prompt shown, the exposed dialog properties fall back to their defaults
-/// (InitialState_*).
-/// 
-/// 2. Request(): a fire-and-forget prompt opens, exposes its copy, and its own confirm/cancel actions run on the
-/// matching resolution (Request_*, Confirm_*, Cancel_*).
-/// 
-/// 3. RequestAsync(): the returned task completes with the operator's decision — true on confirm, false on cancel
-/// or on teardown via CancelPending (RequestAsync_*, CancelPending_*).
-/// 
-/// 4. Re-render notification: opening and resolving a prompt invoke the onChanged callback so the page re-renders;
-/// CancelPending intentionally does not (OnChanged_*, CancelPending_WhenPending_DoesNotInvokeOnChanged).
-/// 
-/// 5. Argument guards: Request rejects a null prompt; RequestAsync rejects null copy (Request_WhenPromptIsNull_*,
-/// RequestAsync_When*IsNull_*).
 /// </summary>
+/// <remarks>
+/// The tests follow the lifecycle of a single prompt slot, from opening through resolution to teardown:
+/// <list type="number">
+///     <item>
+///         <description>
+///         Empty state: no prompt shown, the exposed dialog properties fall back to their defaults
+///         (InitialState_*).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Request(): a fire-and-forget prompt opens, exposes its copy, and its own confirm/cancel actions run
+///         on the matching resolution (Request_*, Confirm_*, Cancel_*).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         RequestAsync(): the returned task completes with the operator's decision — true on confirm, false on
+///         cancel or on teardown via CancelPending (RequestAsync_*, CancelPending_*).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Re-render notification: opening and resolving a prompt invoke the onChanged callback so the page
+///         re-renders; CancelPending intentionally does not (OnChanged_*,
+///         CancelPending_WhenPending_DoesNotInvokeOnChanged).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Argument guards: Request rejects a null prompt; RequestAsync rejects null copy
+///         (Request_WhenPromptIsNull_*, RequestAsync_When*IsNull_*).
+///         </description>
+///     </item>
+/// </list>
+/// </remarks>
 [Trait("Category", "Unit")]
 public sealed class ConfirmPromptControllerTests
 {

@@ -23,21 +23,33 @@ namespace OllamaProxy.Tests.Integration;
 /// OpenAI-compatible backend. A canned <see cref="HttpMessageHandler"/> stands in for the upstream so
 /// each test drives the full path — payload construction, HTTP transport, and status interpretation —
 /// without a live network.
-/// 
+/// </summary>
+/// <remarks>
 /// The story is the same for all three probes and is told once per capability:
-/// 
-/// 1. Payload shape: the tool and vision probes target <c>chat/completions</c> with a silent-response
-/// prompt, no token cap, and <c>stream</c> set (so they confirm on the response headers instead of the full
-/// generation), and carry the capability-specific marker (a dummy function for tools, a feature-rich image for
-/// vision); the embedding probe targets <c>embeddings</c> with a short input string and does not stream.
-/// 2. Status interpretation: a 2xx confirms support; a non-auth 4xx (400/404/422, etc.) denies it;
-/// authentication failures (401/403), throttling/server statuses (429/5xx) and transport failures are
-/// inconclusive (<see langword="null"/>); a caller-requested cancellation propagates.
-/// 3. Argument guards close each member's contract.
-/// 
+/// <list type="number">
+///     <item>
+///         <description>
+///         Payload shape: the tool and vision probes target <c>chat/completions</c> with a silent-response
+///         prompt, no token cap, and <c>stream</c> set (so they confirm on the response headers instead of the
+///         full generation), and carry the capability-specific marker (a dummy function for tools, a
+///         feature-rich image for vision); the embedding probe targets <c>embeddings</c> with a short input
+///         string and does not stream.
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Status interpretation: a 2xx confirms support; a non-auth 4xx (400/404/422, etc.) denies it;
+///         authentication failures (401/403), throttling/server statuses (429/5xx) and transport failures are
+///         inconclusive (<see langword="null"/>); a caller-requested cancellation propagates.
+///         </description>
+///     </item>
+///     <item>
+///         <description>Argument guards close each member's contract.</description>
+///     </item>
+/// </list>
 /// The three probes share an identical interpretation path inside the prober, but they are distinct
 /// public members, so each gets its own dedicated tests rather than a shared cross-member theory.
-/// </summary>
+/// </remarks>
 [Trait("Category", "Integration")]
 public sealed class OpenAiCapabilityProberIntegrationTests
 {
