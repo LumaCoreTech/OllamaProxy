@@ -114,7 +114,7 @@
 						                       SetPinnedCapability(backend, arg.Model, arg.Capability, arg.Value);
 						                       NotifyConfigurationChanged();
 					                       })"
-					OnRemove="@(() => RemoveBackend(backend))"/>
+					OnRemove="@(() => RequestRemoveBackend(backend))"/>
 			}
 		}
 
@@ -133,6 +133,19 @@
 	}
 </div>
 
+@* Single page-scoped confirmation dialog shared by every destructive action. The page owns the active prompt
+   (mActivePrompt); the dialog is a thin, declarative renderer driven by Visible. Because a modal is exclusive,
+   one prompt slot both models the "only one question at a time" reality and rules out two dialogs open at once. *@
+<ConfirmDialog
+	Visible="@mPrompts.IsVisible"
+	Title="@mPrompts.Title"
+	Message="@mPrompts.Message"
+	ConfirmLabel="@mPrompts.ConfirmLabel"
+	CancelLabel="@mPrompts.CancelLabel"
+	Danger="@mPrompts.Danger"
+	OnConfirm="@mPrompts.Confirm"
+	OnCancel="@mPrompts.Cancel"/>
+
 @code {
 
 	/// <summary>
@@ -148,6 +161,23 @@
 	/// on every load because the reloaded draft replaces every backend instance.
 	/// </summary>
 	private DesiredBackend? mExpanded;
+
+	/// <summary>
+	/// Owns the single page-scoped confirmation prompt shown in the <see cref="ConfirmDialog"/> and bridges it to
+	/// both fire-and-forget confirmations (removing a backend) and await-for-decision gates (leaving with unsaved
+	/// edits). A modal is mutually exclusive — only one question at a time — so this one controller structurally
+	/// rules out two dialogs being open at once. Re-renders the page whenever the active prompt opens or closes.
+	/// </summary>
+	private readonly ConfirmPromptController mPrompts;
+
+	/// <summary>
+	/// Initializes the page, wiring the confirmation-prompt controller to <see cref="ComponentBase.StateHasChanged"/>
+	/// so opening or closing a prompt re-renders the shared dialog.
+	/// </summary>
+	public Backends()
+	{
+		mPrompts = new ConfirmPromptController(StateHasChanged);
+	}
 
 	/// <summary>
 	/// Whether a configuration load is currently running. Drives the refresh button's label and disabled state and
@@ -370,13 +400,23 @@
 
 	/// <summary>
 	/// The navigation-changing handler registered with <see cref="NavigationManager"/>. When the draft is dirty
-	/// and the operator tries to leave the page, the navigation is blocked and a browser-native confirm dialog
-	/// asks them whether they really want to discard the edits. A clean draft passes through immediately. The
-	/// confirm is awaited (rather than synchronously blocked) so we do not stall the Blazor render thread on a
-	/// dialog that can take seconds for the operator to answer.
+	/// and the operator tries to leave the page, the navigation is blocked and the shared confirmation dialog asks
+	/// them whether they really want to discard the edits. A clean draft passes through immediately. The decision
+	/// is awaited (rather than synchronously blocked) so we do not stall the Blazor render thread on a dialog that
+	/// can take seconds for the operator to answer.
 	/// </summary>
 	/// <param name="context">The in-flight navigation request.</param>
 	/// <returns>A task that completes once the operator has decided (or the navigation was approved).</returns>
+	/// <remarks>
+	/// The declarative <see cref="ConfirmDialog"/> reports its outcome through button callbacks, not an awaitable
+	/// call, so <see cref="ConfirmPromptController.RequestAsync"/> bridges it to this imperative gate: it opens the
+	/// shared prompt and returns a task that completes with the operator's decision. A circuit teardown while the
+	/// operator is deciding resolves the pending task with <see langword="false"/> (via
+	/// <see cref="ConfirmPromptController.CancelPending"/>) so this handler never awaits forever. The
+	/// <see cref="LocationChangingContext.CancellationToken"/> is intentionally not observed, matching the prior
+	/// browser-native prompt: a superseding navigation simply leaves the dialog open until the operator answers the
+	/// original question.
+	/// </remarks>
 	private async ValueTask ConfirmNavigationAsync(LocationChangingContext context)
 	{
 		// A clean draft never blocks: the operator either just loaded the page or successfully applied, so a
@@ -386,26 +426,17 @@
 			return;
 		}
 
-		try
-		{
-			// The browser's own confirm() is the simplest available prompt: it is universally supported and
-			// renders a recognizable "leave site?" dialog. A custom modal would be nicer but is not worth the
-			// complexity for a single-page surface that is the only place this matters.
-			bool discard = await JS
-				               .InvokeAsync<bool>(
-					               "confirm",
-					               "You have unsaved changes. Leave this page and discard them?")
-				               .ConfigureAwait(true);
+		// Bridge the declarative dialog to this imperative gate: open the shared prompt and await the operator's
+		// answer. The controller re-renders to open the dialog and completes the task once they decide.
+		bool leave = await mPrompts.RequestAsync(
+			title: "Discard unsaved changes?",
+			message: "You have unsaved changes. Leave this page and discard them?",
+			confirmLabel: "Leave",
+			danger: true).ConfigureAwait(true);
 
-			if (!discard)
-			{
-				context.PreventNavigation();
-			}
-		}
-		catch (JSDisconnectedException)
+		if (!leave)
 		{
-			// The circuit was torn down while we waited for the operator's answer. There is nothing left to
-			// navigate to, so let the framework decide.
+			context.PreventNavigation();
 		}
 	}
 
@@ -529,6 +560,30 @@
 		mDraft.Backends.Add(backend);
 		mExpanded = backend;
 		NotifyConfigurationChanged();
+	}
+
+	/// <summary>
+	/// Requests removal of a backend by opening the shared confirmation dialog rather than deleting immediately.
+	/// The actual removal is deferred to the prompt's confirm action once the operator confirms; dismissing the
+	/// dialog leaves the draft untouched.
+	/// </summary>
+	/// <param name="backend">The backend the operator asked to remove.</param>
+	private void RequestRemoveBackend(DesiredBackend backend)
+	{
+		// Name the backend in the message so the operator sees exactly which one the irreversible-until-discarded
+		// action targets.
+		string message = $"Remove \"{BackendCardPresenter.DisplayName(backend)}\" from the draft? " +
+						 "The backend is deleted from the running proxy only when you apply the draft.";
+
+		mPrompts.Request(new ConfirmPrompt
+		{
+			Title = "Remove backend?",
+			Message = message,
+			ConfirmLabel = "Remove",
+			Danger = true,
+			Confirm = () => RemoveBackend(backend),
+			Cancel = static () => { }
+		});
 	}
 
 	/// <summary>
@@ -1269,7 +1324,8 @@
 	/// probe from <see cref="mCts"/> (or disposes <see cref="mCts"/> before the linked children observe it) cannot
 	/// leave an orphaned probe running past the page's lifetime. The JS dirty-guard module, the Ctrl+Enter commit
 	/// shortcut module, and the in-app location-changing handler are torn down alongside so none holds onto a
-	/// callback that fires after the page has gone.
+	/// callback that fires after the page has gone. Any open confirmation prompt is resolved too, so a navigation
+	/// guard still awaiting the operator's decision unblocks instead of hanging past the circuit.
 	/// </summary>
 	public async ValueTask DisposeAsync()
 	{
@@ -1323,6 +1379,12 @@
 		// documented contract).
 		mLocationChangingRegistration?.Dispose();
 		mLocationChangingRegistration = null;
+
+		// Resolve any open prompt so a navigation guard still awaiting the operator's decision does not hang past
+		// the circuit. Cancelling completes the bridging task with "stay" (a no-op for the remove prompt, whose
+		// cancel action does nothing); either way the awaiting handler unblocks and the torn-down page stops
+		// navigating anywhere.
+		mPrompts.CancelPending();
 
 		// Signal the probes explicitly first: cancelling mCts propagates to linked children today, but ordering
 		// the two steps makes the lifetime contract obvious and keeps us correct if the linkage ever changes.

@@ -1,0 +1,209 @@
+@* Copyright (c) 2026 LumaCoreTech *@
+@* SPDX-License-Identifier: MIT *@
+@* Project: https://github.com/LumaCoreTech/OllamaProxy *@
+
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@* Reusable confirmation dialog for destructive or irreversible actions across the admin surface. It renders a
+   native <dialog> element and drives it through showModal()/close() in a tiny JS module (confirmDialog.js), so
+   focus trapping, Escape-to-dismiss, and the backdrop all come from the browser rather than a hand-built overlay.
+
+   The component is deliberately generic: the owning page supplies the title, message, button labels, and the
+   danger styling, then owns the Visible flag and the OnConfirm / OnCancel callbacks. This mirrors the
+   render-driven, page-owns-the-state pattern used elsewhere (see DirtyBanner.Visible) rather than an awaitable
+   ShowAsync() API that would hide dialog state inside the component.
+
+   The native dialog's own dismissal paths (Escape, backdrop click) fire the DOM 'cancel' event, which the JS
+   module forwards to OnNativeCancel so the owner's OnCancel runs no matter how the dialog was closed. *@
+<dialog @ref="mDialog" class="confirm-dialog @(Danger ? "confirm-dialog-danger" : null)"
+        aria-labelledby="@mTitleId" aria-describedby="@mMessageId">
+	<div class="confirm-dialog-body">
+		<h2 id="@mTitleId" class="confirm-dialog-title">@Title</h2>
+		<p id="@mMessageId" class="confirm-dialog-message">@Message</p>
+	</div>
+	<div class="confirm-dialog-actions">
+		<button type="button" class="confirm-dialog-cancel" @onclick="OnCancelClickAsync">
+			@CancelLabel
+		</button>
+		<button type="button" class="confirm-dialog-confirm @(Danger ? "confirm-dialog-confirm-danger" : null)"
+		        @onclick="OnConfirmClickAsync">
+			@ConfirmLabel
+		</button>
+	</div>
+</dialog>
+
+@code {
+
+	private ElementReference                      mDialog;
+	private IJSObjectReference?                   mModule;
+	private DotNetObjectReference<ConfirmDialog>? mSelfRef;
+
+	// Whether the native dialog is currently shown, tracked so the OnParametersSet diff only opens or closes on an
+	// actual Visible transition rather than on every render (repeated showModal() throws; repeated close() is noise).
+	private bool mIsOpen;
+
+	// Stable per-instance ids so aria-labelledby / aria-describedby link the dialog to its title and message. A
+	// GUID suffix keeps them unique when several ConfirmDialogs coexist on one page.
+	private readonly string mTitleId   = $"confirm-title-{Guid.NewGuid():N}";
+	private readonly string mMessageId = $"confirm-message-{Guid.NewGuid():N}";
+
+	/// <summary>
+	/// Whether the dialog is shown. The owning page raises this to open the dialog and lowers it (typically from
+	/// its own <see cref="OnConfirm"/> / <see cref="OnCancel"/> handlers) to close it. The component reacts to the
+	/// transition by calling the native <c>showModal()</c> / <c>close()</c>, so the page never touches JS itself.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public bool Visible { get; set; }
+
+	/// <summary>
+	/// The dialog's heading, for example <c>Remove backend?</c>. Rendered as the accessible label via
+	/// <c>aria-labelledby</c>.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public string Title { get; set; } = string.Empty;
+
+	/// <summary>
+	/// The explanatory body text, for example the consequence of confirming. Rendered as the accessible
+	/// description via <c>aria-describedby</c>.
+	/// </summary>
+	[Parameter]
+	[EditorRequired]
+	public string Message { get; set; } = string.Empty;
+
+	/// <summary>
+	/// The confirm button's label. Defaults to <c>Confirm</c>; a destructive action typically overrides it with a
+	/// specific verb such as <c>Remove</c> so the button reads as its own consequence.
+	/// </summary>
+	[Parameter]
+	public string ConfirmLabel { get; set; } = "Confirm";
+
+	/// <summary>
+	/// The cancel button's label. Defaults to <c>Cancel</c>.
+	/// </summary>
+	[Parameter]
+	public string CancelLabel { get; set; } = "Cancel";
+
+	/// <summary>
+	/// Whether this dialog confirms a destructive action, which switches the confirm button to the danger palette
+	/// so the irreversible choice is visually distinct from a routine confirmation.
+	/// </summary>
+	[Parameter]
+	public bool Danger { get; set; }
+
+	/// <summary>
+	/// Invoked when the operator confirms. The owning page performs the action and lowers <see cref="Visible"/>.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnConfirm { get; set; }
+
+	/// <summary>
+	/// Invoked when the operator dismisses the dialog by any path: the cancel button, the Escape key, or a
+	/// backdrop click. The owning page lowers <see cref="Visible"/> and leaves its state untouched.
+	/// </summary>
+	[Parameter]
+	public EventCallback OnCancel { get; set; }
+
+	/// <summary>
+	/// Imports the interop module on first render, then opens or closes the native dialog whenever
+	/// <see cref="Visible"/> has diverged from the dialog's actual state. Runs after render so the
+	/// <see cref="mDialog"/> element reference is populated and JS interop is permitted.
+	/// </summary>
+	/// <param name="firstRender">Whether this is the component's first render.</param>
+	/// <returns>A task that completes once the dialog state has been reconciled.</returns>
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			try
+			{
+				mSelfRef = DotNetObjectReference.Create(this);
+				mModule = await JS.InvokeAsync<IJSObjectReference>("import", "./confirmDialog.js").ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// The circuit was torn down between prerender and interactive render; nothing to wire up.
+				return;
+			}
+		}
+
+		if (mModule is null || Visible == mIsOpen)
+		{
+			return;
+		}
+
+		try
+		{
+			if (Visible)
+			{
+				// Register the native-cancel callback each time we open so Escape / backdrop dismissal routes back
+				// to OnCancel; the module drops the handler on close.
+				await mModule.InvokeVoidAsync("show", mDialog, mSelfRef).ConfigureAwait(true);
+			}
+			else
+			{
+				await mModule.InvokeVoidAsync("close", mDialog).ConfigureAwait(true);
+			}
+
+			mIsOpen = Visible;
+		}
+		catch (JSDisconnectedException)
+		{
+			// The circuit is gone; the dialog element went with it, so there is nothing left to open or close.
+		}
+	}
+
+	/// <summary>
+	/// Bridges the native <c>cancel</c> event (Escape key or backdrop click) to <see cref="OnCancel"/>, so a
+	/// dismissal that never touches the cancel button still notifies the owner. Called from JS via the
+	/// <see cref="DotNetObjectReference{T}"/> handed to the module in <see cref="OnAfterRenderAsync"/>.
+	/// </summary>
+	/// <returns>A task that completes once the owner's cancel handler has run.</returns>
+	[JSInvokable]
+	public async Task OnNativeCancelAsync()
+	{
+		// Do NOT lower mIsOpen here. The JS 'cancel' handler calls preventDefault(), so the native dialog is still
+		// open at this point — .NET remains the single source of truth for the open/closed state. Notifying the
+		// owner lowers Visible, and the next render's reconcile detects the Visible(false) != mIsOpen(true)
+		// transition and issues the actual close(). Clearing mIsOpen here would make that reconcile a no-op, leaving
+		// the (now content-less) dialog stuck open in the top layer.
+		await OnCancel.InvokeAsync().ConfigureAwait(true);
+	}
+
+	/// <summary>
+	/// Handles the confirm button click by forwarding to <see cref="OnConfirm"/>.
+	/// </summary>
+	/// <returns>A task that completes once the owner's confirm handler has run.</returns>
+	private async Task OnConfirmClickAsync() => await OnConfirm.InvokeAsync().ConfigureAwait(true);
+
+	/// <summary>
+	/// Handles the cancel button click by forwarding to <see cref="OnCancel"/>.
+	/// </summary>
+	/// <returns>A task that completes once the owner's cancel handler has run.</returns>
+	private async Task OnCancelClickAsync() => await OnCancel.InvokeAsync().ConfigureAwait(true);
+
+	/// <summary>
+	/// Disposes the interop module and the self-reference. Swallows <see cref="JSDisconnectedException"/> because a
+	/// torn-down circuit has already released the JS side.
+	/// </summary>
+	/// <returns>A task that completes once cleanup has run.</returns>
+	public async ValueTask DisposeAsync()
+	{
+		if (mModule is not null)
+		{
+			try
+			{
+				await mModule.DisposeAsync().ConfigureAwait(true);
+			}
+			catch (JSDisconnectedException)
+			{
+				// The circuit is gone; the module was released with it.
+			}
+		}
+
+		mSelfRef?.Dispose();
+	}
+
+}

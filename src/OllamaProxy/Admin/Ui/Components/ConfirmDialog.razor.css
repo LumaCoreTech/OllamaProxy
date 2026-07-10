@@ -1,0 +1,94 @@
+/* Copyright (c) 2026 LumaCoreTech */
+/* SPDX-License-Identifier: MIT */
+/* Project: https://github.com/LumaCoreTech/OllamaProxy */
+
+/* Confirmation dialog: a modal rendered through the native <dialog> element for destructive or irreversible
+   actions. The browser owns the backdrop, focus trap, and Escape handling; this stylesheet only dresses the
+   panel and its buttons in the admin palette. The danger variant tints the confirm button red so an
+   irreversible choice (Remove backend) reads as its own consequence, mirroring the single red .backend-remove
+   control on the card. */
+
+/* The dialog is display:none until showModal() promotes it to the top layer, so these rules describe the open
+   state. Centring is left to the browser's default top-layer positioning. */
+.confirm-dialog {
+    max-width: 28rem;
+    padding: 0;
+    color: var(--admin-text-primary);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-card);
+    border-radius: 0.5rem;
+    box-shadow: var(--admin-shadow-dropdown);
+}
+
+/* Dim the page behind the modal so the decision is clearly foregrounded. */
+
+.confirm-dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.45);
+}
+
+.confirm-dialog-body {
+    padding: 1.25rem 1.25rem 0.5rem;
+}
+
+.confirm-dialog-title {
+    margin: 0 0 0.5rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.confirm-dialog-message {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--admin-text-secondary);
+    line-height: 1.45;
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding: 1rem 1.25rem 1.25rem;
+}
+
+/* Shared button shape; each variant only overrides its palette below. */
+
+.confirm-dialog-actions button {
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    border-radius: 0.3rem;
+    cursor: pointer;
+}
+
+/* Cancel: the quiet, neutral choice — the safe default an anxious operator gravitates to. */
+
+.confirm-dialog-cancel {
+    color: var(--admin-text-secondary);
+    background-color: var(--admin-surface-card);
+    border: 1px solid var(--admin-border-input);
+}
+
+.confirm-dialog-cancel:hover {
+    background-color: var(--admin-surface-hover);
+}
+
+/* Confirm (default): the routine, non-destructive accent. */
+
+.confirm-dialog-confirm {
+    color: var(--admin-text-on-dark);
+    background-color: var(--admin-text-secondary);
+    border: 1px solid var(--admin-text-secondary);
+}
+
+/* Confirm (danger): the irreversible action. Solid red so it is unmistakably the weighty choice, distinct from
+   the neutral cancel beside it. */
+
+.confirm-dialog-confirm-danger {
+    color: var(--admin-text-on-dark);
+    background-color: var(--admin-danger-validation);
+    border-color: var(--admin-danger-validation);
+}
+
+.confirm-dialog-confirm-danger:hover {
+    background-color: var(--admin-danger-validation-text);
+    border-color: var(--admin-danger-validation-text);
+}

@@ -104,6 +104,20 @@
 	}
 </div>
 
+@* Single page-scoped confirmation dialog shared by every destructive action. The controller owns the active
+   prompt; the dialog is a thin, declarative renderer driven by Visible. Because a modal is exclusive, one prompt
+   slot both models the "only one question at a time" reality and rules out two dialogs open at once. Mirrors the
+   Backends page so both configuration surfaces confirm the same way. *@
+<ConfirmDialog
+	Visible="@mPrompts.IsVisible"
+	Title="@mPrompts.Title"
+	Message="@mPrompts.Message"
+	ConfirmLabel="@mPrompts.ConfirmLabel"
+	CancelLabel="@mPrompts.CancelLabel"
+	Danger="@mPrompts.Danger"
+	OnConfirm="@mPrompts.Confirm"
+	OnCancel="@mPrompts.Cancel"/>
+
 @code {
 
 	/// <summary>
@@ -148,6 +162,23 @@
 	/// The <see cref="IDisposable"/> token for the in-app navigation guard.
 	/// </summary>
 	private IDisposable? mLocationChangingRegistration;
+
+	/// <summary>
+	/// Owns the single page-scoped confirmation prompt shown in the <see cref="ConfirmDialog"/> and bridges it to
+	/// the await-for-decision navigation gate (leaving with unsaved edits). A modal is mutually exclusive — only
+	/// one question at a time — so this one controller structurally rules out two dialogs being open at once.
+	/// Re-renders the page whenever the active prompt opens or closes. Mirrors the Backends page.
+	/// </summary>
+	private readonly ConfirmPromptController mPrompts;
+
+	/// <summary>
+	/// Initializes the page, wiring the confirmation-prompt controller to <see cref="ComponentBase.StateHasChanged"/>
+	/// so opening or closing a prompt re-renders the shared dialog.
+	/// </summary>
+	public Configuration()
+	{
+		mPrompts = new ConfirmPromptController(StateHasChanged);
+	}
 
 	/// <summary>
 	/// Cancellation scope for the in-flight load or apply.
@@ -409,8 +440,23 @@
 	}
 
 	/// <summary>
-	/// Prompts the operator before leaving the page with unsaved changes.
+	/// The navigation-changing handler registered with <see cref="NavigationManager"/>. When the draft is dirty and
+	/// the operator tries to leave the page, the navigation is blocked and the shared confirmation dialog asks them
+	/// whether they really want to discard the edits. A clean draft passes through immediately. The decision is
+	/// awaited (rather than synchronously blocked) so we do not stall the Blazor render thread on a dialog that can
+	/// take seconds for the operator to answer.
 	/// </summary>
+	/// <param name="context">The in-flight navigation request.</param>
+	/// <returns>A task that completes once the operator has decided (or the navigation was approved).</returns>
+	/// <remarks>
+	/// The declarative <see cref="ConfirmDialog"/> reports its outcome through button callbacks, not an awaitable
+	/// call, so <see cref="ConfirmPromptController.RequestAsync"/> bridges it to this imperative gate: it opens the
+	/// shared prompt and returns a task that completes with the operator's decision. A circuit teardown while the
+	/// operator is deciding resolves the pending task with <see langword="false"/> (via
+	/// <see cref="ConfirmPromptController.CancelPending"/>) so this handler never awaits forever. The
+	/// <see cref="LocationChangingContext.CancellationToken"/> is intentionally not observed, matching the prior
+	/// browser-native prompt.
+	/// </remarks>
 	private async ValueTask ConfirmNavigationAsync(LocationChangingContext context)
 	{
 		if (!IsDirty)
@@ -418,22 +464,18 @@
 			return;
 		}
 
-		try
-		{
-			bool discard = await JS
-				               .InvokeAsync<bool>(
-					               "confirm",
-					               "You have unsaved changes. Leave this page and discard them?")
-				               .ConfigureAwait(true);
+		// Bridge the declarative dialog to this imperative gate: open the shared prompt and await the operator's
+		// answer. The controller re-renders to open the dialog and completes the task once they decide.
+		bool leave = await mPrompts.RequestAsync(
+				             title: "Discard unsaved changes?",
+				             message: "You have unsaved changes. Leave this page and discard them?",
+				             confirmLabel: "Leave",
+				             danger: true)
+			             .ConfigureAwait(true);
 
-			if (!discard)
-			{
-				context.PreventNavigation();
-			}
-		}
-		catch (JSDisconnectedException)
+		if (!leave)
 		{
-			// Circuit torn down while waiting for the answer; let the framework decide.
+			context.PreventNavigation();
 		}
 	}
 
@@ -472,6 +514,11 @@
 		if (mCts != null) await mCts.CancelAsync();
 		mCts?.Dispose();
 		mLocationChangingRegistration?.Dispose();
+
+		// Resolve any open prompt so a navigation guard still awaiting the operator's decision does not hang past
+		// the circuit. Cancelling completes the bridging task with "stay"; the awaiting handler unblocks and the
+		// torn-down page stops navigating anywhere.
+		mPrompts.CancelPending();
 
 		if (mDirtyModule is not null)
 		{
