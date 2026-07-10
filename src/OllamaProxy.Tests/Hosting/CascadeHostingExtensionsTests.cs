@@ -85,13 +85,23 @@ public sealed class CascadeHostingExtensionsTests : IDisposable
 	/// <returns><see langword="true"/> when the source is the expected overlay file; otherwise <see langword="false"/>.</returns>
 	private static bool IsJsonOverlayFor(IConfigurationSource source, string directory, string fileName)
 	{
-		return source is JsonConfigurationSource json &&
-		       string.Equals(json.Path, fileName, StringComparison.OrdinalIgnoreCase) &&
-		       json.FileProvider is PhysicalFileProvider physical &&
-		       string.Equals(
-			       physical.Root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-			       directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-			       StringComparison.OrdinalIgnoreCase);
+		if (source is not JsonConfigurationSource json ||
+		    !string.Equals(json.Path, fileName, StringComparison.OrdinalIgnoreCase) ||
+		    json.FileProvider is not PhysicalFileProvider physical)
+		{
+			return false;
+		}
+
+		// Normalize both paths to their canonical forms before comparing. PhysicalFileProvider.Root includes a
+		// trailing directory separator, and Path.GetFullPath() may resolve symlinks or case-normalize on
+		// case-insensitive file systems, so the full normalization ensures the comparison succeeds regardless of
+		// how the expected directory was constructed.
+		string normalizedPhysicalRoot = Path.GetFullPath(physical.Root)
+			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		string normalizedExpectedRoot = Path.GetFullPath(directory)
+			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+		return string.Equals(normalizedPhysicalRoot, normalizedExpectedRoot, StringComparison.OrdinalIgnoreCase);
 	}
 
 	/// <summary>
