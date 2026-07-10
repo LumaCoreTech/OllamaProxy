@@ -31,6 +31,17 @@ namespace OllamaProxy.Admin.Editing;
 ///     names must be unique. This matters because <see cref="Name"/> becomes a dictionary key, which would
 ///     otherwise collide silently.
 ///     </para>
+///     <para>
+///     <b>The draft holds verbatim input; normalization is a boundary concern.</b> Distinct from validation, the
+///     draft deliberately stores exactly what the operator typed so a field can pass through intermediate states
+///     while editing. Light normalization of <em>free-text</em> fields (trimming, blank-to-null for the model
+///     prefix, blank rejection for names) is therefore applied by the page's edit handlers, not by setters on
+///     <see cref="Options"/>. A normalizing setter would be the wrong home twice over: it would run during config
+///     binding (<see cref="BackendOptions"/> is also the settings-file bind target) and it would swallow the very
+///     blank state <see cref="BackendOptions"/>'s own validation exists to reject. Typed fields (context length,
+///     reasoning effort) need no such handling because Blazor already maps a cleared field to
+///     <see langword="null"/>; only free text is normalized on the way into the draft.
+///     </para>
 /// </remarks>
 public sealed class DesiredBackend
 {
