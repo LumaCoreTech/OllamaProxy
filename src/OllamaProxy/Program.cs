@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 // Project: https://github.com/LumaCoreTech/OllamaProxy
 
-using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Options;
 
 using OllamaProxy.Admin;
@@ -21,20 +20,32 @@ static class Program
 		// proxy engine runs in a separate inner host that the supervisor builds, starts, and can recycle
 		// beneath this one, so the proxy is reconfigured without ever dropping the chassis or the SCM contact.
 
+		// One service-environment probe drives every hosting decision that differs between a managed service and
+		// a foreground run: the content-root pin here, the chassis overlays in AddOuterChassisHosting, the inner
+		// host composition through the factory, and the HostMode.Auto resolution in ResolveSupervisor. Routing
+		// them all through the same seam (rather than scattered static WindowsServiceHelpers.IsWindowsService()
+		// calls) guarantees the whole process is composed for exactly one hosting model and makes each of those
+		// decisions deterministically testable.
+		var serviceEnvironment = WindowsServiceEnvironment.Instance;
+
 		// A Windows Service starts with its working directory in System32, so the content root must be pinned
 		// to the executable's directory before the builder reads the shipped hostsettings.json. Foreground
 		// hosting (console / container) leaves it at the default so nothing changes there.
 		WebApplicationOptions options = new()
 		{
 			Args = args,
-			ContentRootPath = WindowsServiceHelpers.IsWindowsService() ? AppContext.BaseDirectory : null
+			ContentRootPath = serviceEnvironment.IsWindowsService ? AppContext.BaseDirectory : null
 		};
 
 		WebApplicationBuilder builder = WebApplication.CreateBuilder(options);
 
 		// Configure the chassis from hostsettings.json (replacing the proxy's appsettings.json sources) and,
 		// under the service, enable the service lifetime, Event Log, and the ProgramData chassis overlay.
-		builder.AddOuterChassisHosting();
+		builder.AddOuterChassisHosting(serviceEnvironment);
+
+		// Expose the resolved environment so the factory (and the supervisor's mode resolution) compose against
+		// the same hosting model this entry point pinned the content root for.
+		builder.Services.AddSingleton(serviceEnvironment);
 
 		// Bind and validate the chassis options. Admin carries the listening URL; Host carries the run mode
 		// that decides whether an inner-host start failure is fatal.
@@ -71,7 +82,8 @@ static class Program
 		// validated recycles. One supervisor instance is exposed through both its own interface (for a future
 		// recycle trigger) and IHostedService (so the chassis starts and stops it), mirroring how the router is
 		// shared behind two intent-revealing interfaces.
-		builder.Services.AddSingleton<IProxyHostFactory, ProxyHostFactory>();
+		builder.Services.AddSingleton<IProxyHostFactory>(static sp =>
+			new ProxyHostFactory(sp.GetRequiredService<IServiceEnvironment>()));
 		builder.Services.AddSingleton(ResolveSupervisor);
 		builder.Services.AddSingleton<IProxyHostSupervisor>(static sp => sp.GetRequiredService<ProxyHostSupervisor>());
 		builder.Services.AddHostedService(static sp => sp.GetRequiredService<ProxyHostSupervisor>());
@@ -136,27 +148,22 @@ static class Program
 
 	/// <summary>
 	/// Builds the single <see cref="ProxyHostSupervisor"/>, resolving the configured <see cref="HostMode"/> into
-	/// the concrete fail-fast policy: <see cref="HostMode.Auto"/> becomes <see cref="HostMode.Daemon"/> under the
-	/// Service Control Manager and <see cref="HostMode.Foreground"/> otherwise, so a managed service stays
-	/// resident on a start failure while an interactive run fails fast.
+	/// the concrete fail-fast policy through <see cref="HostModeResolver"/>: <see cref="HostMode.Auto"/> becomes
+	/// <see cref="HostMode.Daemon"/> under the Service Control Manager and <see cref="HostMode.Foreground"/>
+	/// otherwise, so a managed service stays resident on a start failure while an interactive run fails fast.
+	/// The resolution keys off the same shared <see cref="IServiceEnvironment"/> the entry point composed the
+	/// rest of the process against.
 	/// </summary>
 	/// <param name="serviceProvider">The application service provider supplying the factory, options, and logger.</param>
 	/// <returns>The configured supervisor instance.</returns>
 	private static ProxyHostSupervisor ResolveSupervisor(IServiceProvider serviceProvider)
 	{
 		HostMode configuredMode = serviceProvider.GetRequiredService<IOptions<ChassisOptions>>().Value.Mode;
-		bool isDaemon = configuredMode switch
-		{
-			HostMode.Daemon     => true,
-			HostMode.Foreground => false,
-			// Auto: a Windows Service is a managed daemon; everything else (console, container) is foreground.
-			HostMode.Auto => WindowsServiceHelpers.IsWindowsService(),
-			var _         => WindowsServiceHelpers.IsWindowsService()
-		};
+		var environment = serviceProvider.GetRequiredService<IServiceEnvironment>();
 
 		return new ProxyHostSupervisor(
 			serviceProvider.GetRequiredService<IProxyHostFactory>(),
-			failFastOnStartFailure: !isDaemon,
+			failFastOnStartFailure: HostModeResolver.ShouldFailFastOnStartFailure(configuredMode, environment),
 			serviceProvider.GetRequiredService<ILogger<ProxyHostSupervisor>>());
 	}
 }

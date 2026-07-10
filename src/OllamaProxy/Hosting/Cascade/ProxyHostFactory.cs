@@ -6,7 +6,6 @@ using System.Text.Json.Serialization;
 
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting.WindowsServices;
 
 using OllamaProxy.Configuration;
 using OllamaProxy.Core;
@@ -26,6 +25,23 @@ namespace OllamaProxy.Hosting.Cascade;
 /// </summary>
 sealed class ProxyHostFactory : IProxyHostFactory
 {
+	/// <summary>
+	/// The service-environment probe that decides whether the Windows Service content-root pin and the
+	/// SCM-specific inner-hosting branches apply. Shared with <see cref="CascadeHostingExtensions.AddInnerProxyHosting"/>
+	/// so the host is composed for exactly one hosting model.
+	/// </summary>
+	private readonly IServiceEnvironment mEnvironment;
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="ProxyHostFactory"/> class.
+	/// </summary>
+	/// <param name="environment">
+	/// The service-environment probe deciding the hosting model. Defaults to the production
+	/// <see cref="WindowsServiceEnvironment"/> when <see langword="null"/>; tests supply a fake to drive both paths.
+	/// </param>
+	public ProxyHostFactory(IServiceEnvironment? environment = null) =>
+		mEnvironment = environment ?? WindowsServiceEnvironment.Instance;
+
 	/// <inheritdoc/>
 	public IHost CreateProxyHost(bool useDryRunServer)
 	{
@@ -34,7 +50,7 @@ sealed class ProxyHostFactory : IProxyHostFactory
 		// hosting (console / container) leaves it at the default so nothing changes there.
 		WebApplicationOptions options = new()
 		{
-			ContentRootPath = WindowsServiceHelpers.IsWindowsService() ? AppContext.BaseDirectory : null
+			ContentRootPath = mEnvironment.IsWindowsService ? AppContext.BaseDirectory : null
 		};
 
 		WebApplicationBuilder builder = WebApplication.CreateBuilder(options);
@@ -42,7 +58,7 @@ sealed class ProxyHostFactory : IProxyHostFactory
 		// Inner-host hosting concerns only: the writable data directory, the ProgramData appsettings overlay,
 		// and the Event Log provider under the service. The service lifetime itself belongs to the outer
 		// chassis, so it is deliberately not registered here.
-		builder.AddInnerProxyHosting();
+		builder.AddInnerProxyHosting(mEnvironment);
 
 		// Options graph (bound + validated at startup) and the per-backend resilient HTTP clients the
 		// providers send requests through.
@@ -109,6 +125,8 @@ sealed class ProxyHostFactory : IProxyHostFactory
 		// the endpoints (so it catches anything they throw that is not an already-mapped ProviderException).
 		app.UseMiddleware<ProxyExceptionHandlingMiddleware>();
 
+		// The Ollama-compatible endpoint surface, which is the only outward-facing part of the inner host.
+		// It handles requests according to the Ollama API specification.
 		app.MapOllamaApi();
 
 		return app;

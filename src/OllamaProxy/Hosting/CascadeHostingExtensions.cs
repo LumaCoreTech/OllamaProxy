@@ -6,7 +6,6 @@ using System.Runtime.Versioning;
 
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Json;
-using Microsoft.Extensions.Hosting.WindowsServices;
 
 namespace OllamaProxy.Hosting;
 
@@ -64,11 +63,19 @@ static class CascadeHostingExtensions
 	/// only the shipped <c>hostsettings.json</c>.
 	/// </summary>
 	/// <param name="builder">The web application builder for the outer chassis.</param>
+	/// <param name="environment">
+	/// The service-environment probe deciding whether the SCM-specific branches run. Defaults to the production
+	/// <see cref="WindowsServiceEnvironment"/> when <see langword="null"/>; tests supply a fake to drive both paths.
+	/// </param>
 	/// <returns>The same <paramref name="builder"/> instance, to support call chaining.</returns>
 	/// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
-	public static WebApplicationBuilder AddOuterChassisHosting(this WebApplicationBuilder builder)
+	public static WebApplicationBuilder AddOuterChassisHosting(
+		this WebApplicationBuilder builder,
+		IServiceEnvironment?       environment = null)
 	{
 		ArgumentNullException.ThrowIfNull(builder);
+
+		environment ??= WindowsServiceEnvironment.Instance;
 
 		// The chassis is configured by hostsettings.json, not the proxy's appsettings.json. Strip the default
 		// JSON sources WebApplication.CreateBuilder added and layer the chassis file in their place, so the two
@@ -81,9 +88,9 @@ static class CascadeHostingExtensions
 		// foreground run, or the writable %ProgramData%\OllamaProxy copy under the Windows Service. This mirrors
 		// how AddInnerProxyHosting registers IDataDirectory for the same disk-layout reason.
 		builder.Services.AddSingleton<IWritableProxyConfigFile>(
-			new WritableProxyConfigFile(ResolveOperatorConfigPath(builder.Environment.ContentRootPath)));
+			new WritableProxyConfigFile(ResolveOperatorConfigPath(builder.Environment.ContentRootPath, environment)));
 
-		if (!WindowsServiceHelpers.IsWindowsService())
+		if (!environment.IsWindowsService)
 		{
 			return builder;
 		}
@@ -111,13 +118,21 @@ static class CascadeHostingExtensions
 	/// hosting point the data directory at the executable's own directory (<see cref="AppContext.BaseDirectory"/>).
 	/// </summary>
 	/// <param name="builder">The web application builder for the inner proxy host.</param>
+	/// <param name="environment">
+	/// The service-environment probe deciding whether the SCM-specific branches run. Defaults to the production
+	/// <see cref="WindowsServiceEnvironment"/> when <see langword="null"/>; tests supply a fake to drive both paths.
+	/// </param>
 	/// <returns>The same <paramref name="builder"/> instance, to support call chaining.</returns>
 	/// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
-	public static WebApplicationBuilder AddInnerProxyHosting(this WebApplicationBuilder builder)
+	public static WebApplicationBuilder AddInnerProxyHosting(
+		this WebApplicationBuilder builder,
+		IServiceEnvironment?       environment = null)
 	{
 		ArgumentNullException.ThrowIfNull(builder);
 
-		if (!WindowsServiceHelpers.IsWindowsService())
+		environment ??= WindowsServiceEnvironment.Instance;
+
+		if (!environment.IsWindowsService)
 		{
 			// Foreground hosting (console / container): write runtime artifacts beside the executable
 			// (AppContext.BaseDirectory) rather than under the content root. In a container the two are the
@@ -183,6 +198,10 @@ static class CascadeHostingExtensions
 	/// <exception cref="ArgumentNullException">
 	/// <paramref name="contentRootPath"/> or <paramref name="environmentName"/> is <see langword="null"/>.
 	/// </exception>
+	/// <param name="environment">
+	/// The service-environment probe deciding whether the ProgramData operator overlay is layered in. Defaults to
+	/// the production <see cref="WindowsServiceEnvironment"/> when <see langword="null"/>; tests supply a fake.
+	/// </param>
 	/// <exception cref="ArgumentException">
 	/// <paramref name="contentRootPath"/> or <paramref name="environmentName"/> is empty or consists only of
 	/// white-space characters.
@@ -205,10 +224,15 @@ static class CascadeHostingExtensions
 	///     would surface environment-only secrets in the admin view and risk persisting them to disk.
 	///     </para>
 	/// </remarks>
-	public static IConfigurationRoot BuildProxyOptionsConfiguration(string contentRootPath, string environmentName)
+	public static IConfigurationRoot BuildProxyOptionsConfiguration(
+		string               contentRootPath,
+		string               environmentName,
+		IServiceEnvironment? environment = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(contentRootPath);
 		ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
+
+		environment ??= WindowsServiceEnvironment.Instance;
 
 		ConfigurationBuilder builder = new();
 
@@ -229,7 +253,7 @@ static class CascadeHostingExtensions
 
 		// Under the Service Control Manager the operator copy in ProgramData overrides the shipped defaults, the
 		// same overlay AddInnerProxyHosting inserts for the inner host. Foreground hosting has no such overlay.
-		if (WindowsServiceHelpers.IsWindowsService())
+		if (environment.IsWindowsService)
 		{
 			builder.AddJsonFile(
 				Path.Combine(GetProgramDataRoot(), ProxyConfigFileName),
@@ -264,10 +288,12 @@ static class CascadeHostingExtensions
 	/// under the content root, which there serves as both the shipped defaults and the operator file.
 	/// </summary>
 	/// <param name="contentRootPath">The content root the foreground operator file is resolved against.</param>
+	/// <param name="environment">The service-environment probe selecting the ProgramData or content-root location.</param>
 	/// <returns>The absolute path the admin surface persists the proxy configuration to.</returns>
-	private static string ResolveOperatorConfigPath(string contentRootPath) => Path.Combine(
-		WindowsServiceHelpers.IsWindowsService() ? GetProgramDataRoot() : contentRootPath,
-		ProxyConfigFileName);
+	private static string ResolveOperatorConfigPath(string contentRootPath, IServiceEnvironment environment) =>
+		Path.Combine(
+			environment.IsWindowsService ? GetProgramDataRoot() : contentRootPath,
+			ProxyConfigFileName);
 
 	/// <summary>
 	/// Attaches the Windows Event Log provider with the shared source name. Isolated into a
