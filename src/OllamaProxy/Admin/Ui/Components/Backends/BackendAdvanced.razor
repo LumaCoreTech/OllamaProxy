@@ -29,10 +29,10 @@
 					<input type="number"
 					       min="1"
 					       step="1"
-						   @bind="Backend.Options.ContextLength"
-						   @bind:after="NotifyChanged"
-						   placeholder="Backend default"
-						   disabled="@FieldsBusy"/>
+					       @bind="Backend.Options.ContextLength"
+					       @bind:after="NotifyChanged"
+					       placeholder="Backend default"
+					       disabled="@FieldsBusy"/>
 				</label>
 				<p class="backend-field-hint">
 					Fallback context window in tokens for auto-exposed models. The value a backend reports always
@@ -46,9 +46,9 @@
 					Model prefix
 					<input type="text"
 					       @bind:get="Backend.Options.ModelPrefix"
-						   @bind:set="value => OnModelPrefixChanged.InvokeAsync(value)"
-						   placeholder="e.g. vllm"
-						   disabled="@FieldsBusy"/>
+					       @bind:set="value => OnModelPrefixChanged.InvokeAsync(value)"
+					       placeholder="e.g. vllm"
+					       disabled="@FieldsBusy"/>
 				</label>
 				<p class="backend-field-hint">
 					Applied to every exposed model name as <code>prefix/model</code> to disambiguate the same
@@ -84,9 +84,9 @@
 				<div class="backend-probing-toggles">
 					<label class="backend-check">
 						<input type="checkbox"
-							   @bind="Backend.Options.Probing.ProbeCompletion"
-							   @bind:after="NotifyChanged"
-							   disabled="@FieldsBusy"/>
+						       @bind="Backend.Options.Probing.ProbeCompletion"
+						       @bind:after="NotifyChanged"
+						       disabled="@FieldsBusy"/>
 						Completion
 					</label>
 					<label class="backend-check">
@@ -99,9 +99,9 @@
 					</label>
 					<label class="backend-check">
 						<input type="checkbox"
-							   @bind="Backend.Options.Probing.ProbeEmbeddings"
-							   @bind:after="NotifyChanged"
-							   disabled="@FieldsBusy"/>
+						       @bind="Backend.Options.Probing.ProbeEmbeddings"
+						       @bind:after="NotifyChanged"
+						       disabled="@FieldsBusy"/>
 						Embeddings
 					</label>
 				</div>
@@ -113,9 +113,9 @@
 						       min="@CapabilityProbingOptions.MinimumTimeoutSeconds"
 						       max="@CapabilityProbingOptions.MaximumTimeoutSeconds"
 						       step="1"
-							   @bind="Backend.Options.Probing.TimeoutSeconds"
-							   @bind:after="NotifyChanged"
-							   disabled="@FieldsBusy"/>
+						       @bind="Backend.Options.Probing.TimeoutSeconds"
+						       @bind:after="NotifyChanged"
+						       disabled="@FieldsBusy"/>
 					</label>
 					<label>
 						Interactive timeout (s)
@@ -123,9 +123,9 @@
 						       min="@CapabilityProbingOptions.MinimumInteractiveTimeoutSeconds"
 						       max="@CapabilityProbingOptions.MaximumInteractiveTimeoutSeconds"
 						       step="1"
-							   @bind="Backend.Options.Probing.InteractiveTimeoutSeconds"
-							   @bind:after="NotifyChanged"
-							   disabled="@FieldsBusy"/>
+						       @bind="Backend.Options.Probing.InteractiveTimeoutSeconds"
+						       @bind:after="NotifyChanged"
+						       disabled="@FieldsBusy"/>
 					</label>
 					<label>
 						Max retries
@@ -133,9 +133,9 @@
 						       min="@CapabilityProbingOptions.MinimumMaxProbeRetries"
 						       max="@CapabilityProbingOptions.MaximumMaxProbeRetries"
 						       step="1"
-							   @bind="Backend.Options.Probing.MaxProbeRetries"
-							   @bind:after="NotifyChanged"
-							   disabled="@FieldsBusy"/>
+						       @bind="Backend.Options.Probing.MaxProbeRetries"
+						       @bind:after="NotifyChanged"
+						       disabled="@FieldsBusy"/>
 					</label>
 					<label>
 						Retry base delay (s)
@@ -143,9 +143,9 @@
 						       min="@CapabilityProbingOptions.MinimumRetryBaseDelaySeconds"
 						       max="@CapabilityProbingOptions.MaximumRetryBaseDelaySeconds"
 						       step="1"
-							   @bind="Backend.Options.Probing.RetryBaseDelaySeconds"
-							   @bind:after="NotifyChanged"
-							   disabled="@FieldsBusy"/>
+						       @bind="Backend.Options.Probing.RetryBaseDelaySeconds"
+						       @bind:after="NotifyChanged"
+						       disabled="@FieldsBusy"/>
 					</label>
 					<label>
 						Max concurrent probes
@@ -153,9 +153,9 @@
 						       min="@CapabilityProbingOptions.MinimumMaxConcurrentProbes"
 						       max="@CapabilityProbingOptions.MaximumMaxConcurrentProbes"
 						       step="1"
-							   @bind="Backend.Options.Probing.MaxConcurrentProbes"
-							   @bind:after="NotifyChanged"
-							   disabled="@FieldsBusy"/>
+						       @bind="Backend.Options.Probing.MaxConcurrentProbes"
+						       @bind:after="NotifyChanged"
+						       disabled="@FieldsBusy"/>
 					</label>
 				</div>
 			</fieldset>
