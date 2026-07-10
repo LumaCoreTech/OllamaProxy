@@ -73,35 +73,42 @@ public sealed class CascadeHostingExtensionsTests : IDisposable
 		ProgramDataFolder);
 
 	/// <summary>
-	/// Determines whether a configuration source is a JSON file source for <paramref name="fileName"/> rooted in
-	/// <paramref name="directory"/>. The production code calls <c>ResolveFileProvider()</c> on an absolute path,
-	/// which rewrites <see cref="FileConfigurationSource.Path"/> to the bare file name and roots a
-	/// <see cref="PhysicalFileProvider"/> at the directory; the overlay is therefore identified by that
-	/// provider's root plus the file name, not by a full absolute <c>Path</c>.
+	/// Determines whether a configuration source is the JSON overlay for the file at
+	/// <paramref name="directory"/> combined with <paramref name="fileName"/>.
 	/// </summary>
 	/// <param name="source">The configuration source to test.</param>
 	/// <param name="directory">The directory the overlay file is expected to be rooted in.</param>
 	/// <param name="fileName">The overlay file name (for example <c>appsettings.json</c>).</param>
 	/// <returns><see langword="true"/> when the source is the expected overlay file; otherwise <see langword="false"/>.</returns>
+	/// <remarks>
+	/// The production code passes an absolute path to <c>ResolveFileProvider()</c>, which splits it between the
+	/// <see cref="PhysicalFileProvider"/> root and <see cref="FileConfigurationSource.Path"/> at the
+	/// <em>deepest directory that already exists on disk</em>: it climbs the tree from the file upward, roots the
+	/// provider at the first existing directory, and leaves the remaining (non-existent) segments in
+	/// <see cref="FileConfigurationSource.Path"/>. Where the split falls therefore depends on which directories
+	/// happen to exist on the test machine — on a developer box <c>%ProgramData%\OllamaProxy</c> may already
+	/// exist (root = that folder, path = the bare file name), while on a clean CI agent it does not (root =
+	/// <c>%ProgramData%</c>, path = <c>OllamaProxy\{fileName}</c>). The overlay is therefore identified by
+	/// recombining the provider root with the relative path and comparing that full path against the expected
+	/// one, never by assuming a particular split.
+	/// </remarks>
 	private static bool IsJsonOverlayFor(IConfigurationSource source, string directory, string fileName)
 	{
 		if (source is not JsonConfigurationSource json ||
-		    !string.Equals(json.Path, fileName, StringComparison.OrdinalIgnoreCase) ||
+		    json.Path is null ||
 		    json.FileProvider is not PhysicalFileProvider physical)
 		{
 			return false;
 		}
 
-		// Normalize both paths to their canonical forms before comparing. PhysicalFileProvider.Root includes a
-		// trailing directory separator, and Path.GetFullPath() may resolve symlinks or case-normalize on
-		// case-insensitive file systems, so the full normalization ensures the comparison succeeds regardless of
-		// how the expected directory was constructed.
-		string normalizedPhysicalRoot = Path.GetFullPath(physical.Root)
-			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-		string normalizedExpectedRoot = Path.GetFullPath(directory)
-			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		// Recombine the provider root with the (possibly multi-segment) relative path to recover the full path
+		// the source actually resolves, regardless of where ResolveFileProvider() drew the root/path boundary.
+		// Path.GetFullPath() then canonicalizes both sides (separators, trailing slash, symlinks, case) so the
+		// comparison is stable across platforms and independent of which directories exist on the agent.
+		string actualFullPath = Path.GetFullPath(Path.Combine(physical.Root, json.Path));
+		string expectedFullPath = Path.GetFullPath(Path.Combine(directory, fileName));
 
-		return string.Equals(normalizedPhysicalRoot, normalizedExpectedRoot, StringComparison.OrdinalIgnoreCase);
+		return string.Equals(actualFullPath, expectedFullPath, StringComparison.OrdinalIgnoreCase);
 	}
 
 	/// <summary>
