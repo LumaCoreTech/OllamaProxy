@@ -22,17 +22,6 @@ public sealed class ProxyOptionsTests
 	private static BackendOptions ValidBackend() => new()
 		{ BaseUrl = "https://api.openai.com/v1", ProviderType = "openai", ApiKey = "sk-abcdefgh" };
 
-	private static List<ValidationResult> Validate(ProxyOptions options)
-	{
-		List<ValidationResult> results = [];
-		Validator.TryValidateObject(
-			options,
-			new ValidationContext(options),
-			results,
-			validateAllProperties: true);
-		return results;
-	}
-
 	/// <summary>
 	/// Verifies that <see cref="ProxyOptions.Validate"/> reports no errors for a minimal valid
 	/// configuration with one well-formed backend.
@@ -477,7 +466,7 @@ public sealed class ProxyOptionsTests
 	}
 
 	/// <summary>
-	/// Verifies that the [Url] attribute rejects a listener value that is not a valid absolute URL.
+	/// Verifies that the [ListenUrl] attribute rejects a listener value that is not a valid absolute URL.
 	/// </summary>
 	[Theory]
 	[InlineData("")]
@@ -500,5 +489,50 @@ public sealed class ProxyOptionsTests
 
 		// Assert
 		Assert.Contains(results, r => r.MemberNames.Contains(nameof(ProxyOptions.ListenUrl)));
+	}
+
+	/// <summary>
+	/// Verifies that a DNS host name — which Kestrel would silently expand to "bind every interface" instead
+	/// of resolving — is rejected on the listener, so the over-exposure fails fast at startup.
+	/// </summary>
+	/// <param name="listenUrl">The DNS-host listener URL expected to fail validation.</param>
+	[Theory]
+	[InlineData("http://my-server:11434")]
+	[InlineData("http://example.com:11434")]
+	public void Validate_WhenListenUrlIsDnsHostName_ReportsListenUrlError(string listenUrl)
+	{
+		// Arrange
+		ProxyOptions options = new()
+		{
+			ListenUrl = listenUrl,
+			Backends =
+			{
+				["default"] = ValidBackend()
+			}
+		};
+
+		// Act
+		List<ValidationResult> results = Validate(options);
+
+		// Assert
+		Assert.Contains(results, r => r.MemberNames.Contains(nameof(ProxyOptions.ListenUrl)));
+	}
+
+	/// <summary>
+	/// Validates the given <see cref="ProxyOptions"/> instance and returns any validation errors.
+	/// </summary>
+	/// <param name="options">The <see cref="ProxyOptions"/> instance to validate.</param>
+	/// <returns>A list of <see cref="ValidationResult"/> objects representing validation errors.</returns>
+	private static List<ValidationResult> Validate(ProxyOptions options)
+	{
+		List<ValidationResult> results = [];
+
+		Validator.TryValidateObject(
+			options,
+			new ValidationContext(options),
+			results,
+			validateAllProperties: true);
+
+		return results;
 	}
 }

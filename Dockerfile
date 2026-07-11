@@ -46,10 +46,10 @@ ENV OllamaProxy__ListenUrl=http://0.0.0.0:11434 \
     DOTNET_TieredPGO=1
 
 # The control-plane listener (the admin UI, outer chassis Kestrel instance). The chassis binds its own
-# address via Admin:Url — independently of the inner proxy's listener above, so the two Kestrel instances
+# address via Admin:ListenUrl — independently of the inner proxy's listener above, so the two Kestrel instances
 # in the one process never share a port. Rebind it to all interfaces so the admin UI is reachable once its
 # port is published; the shipped default stays http://localhost:11435 for desktop/service installs.
-ENV Admin__Url=http://0.0.0.0:11435
+ENV Admin__ListenUrl=http://0.0.0.0:11435
 
 # Declare both ports. EXPOSE is metadata only: the operator decides what to actually publish (docker run -p)
 # and owns access control at the container boundary, because the admin UI has no built-in authentication and

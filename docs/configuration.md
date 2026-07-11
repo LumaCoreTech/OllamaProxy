@@ -37,8 +37,14 @@ The environment variable form is:
 OllamaProxy__ListenUrl=http://0.0.0.0:11434
 ```
 
-Keep this address distinct from the chassis/admin address (`Admin:Url` in `hostsettings.json`, default
+Keep this address distinct from the chassis/admin address (`Admin:ListenUrl` in `hostsettings.json`, default
 `http://localhost:11435`) because the two hosts bind separate Kestrel instances.
+
+> [!IMPORTANT]
+> The host part must name a **specific interface**: `localhost`, an IP literal (for example `127.0.0.1` or
+> `0.0.0.0`), or an explicit wildcard (`[::]`, `*`, `+`). Kestrel does **not** resolve a DNS host name in a
+> bind URL — it silently binds *every* interface instead. To avoid that quiet over-exposure, a DNS host name
+> such as `http://my-server:11434` is rejected at startup. The same rule applies to `Admin:ListenUrl`.
 
 ## Operating modes
 

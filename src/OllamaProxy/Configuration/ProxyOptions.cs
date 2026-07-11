@@ -27,7 +27,7 @@ public sealed class ProxyOptions : IValidatableObject
 	/// environment variable (for example to bind all interfaces inside a container).
 	/// </summary>
 	[Required]
-	[Url]
+	[ListenUrl]
 	public string ListenUrl { get; set; } = "http://localhost:11434";
 
 	/// <summary>
@@ -56,7 +56,7 @@ public sealed class ProxyOptions : IValidatableObject
 	/// <inheritdoc/>
 	public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
 	{
-		// ListenUrl is covered by the [Required] and [Url] data annotations that the framework already
+		// ListenUrl is covered by the [Required] and [ListenUrl] data annotations that the framework already
 		// enforces; no additional custom rule is needed here.
 
 		// The options validation pipeline does not recurse into nested complex members, so each backend

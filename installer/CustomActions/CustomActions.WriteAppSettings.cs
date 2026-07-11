@@ -262,7 +262,7 @@ public static partial class CustomActions
 		builder.Append("  },\n");
 		builder.Append("  \"Admin\": {\n");
 		builder.Append("    \"Enabled\": true,\n");
-		builder.Append("    \"Url\": \"").Append(EscapeJson(adminUrl)).Append("\"\n");
+		builder.Append("    \"ListenUrl\": \"").Append(EscapeJson(adminUrl)).Append("\"\n");
 		builder.Append("  }\n");
 		builder.Append("}\n");
 

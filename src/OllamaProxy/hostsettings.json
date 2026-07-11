@@ -13,7 +13,7 @@
 //
 //  OVERRIDES
 //    Any setting can be overridden by an environment variable using "__" (double underscore) as the section
-//    separator, e.g. Admin__Url=http://0.0.0.0:11435. An environment variable always wins over the value in
+//    separator, e.g. Admin__ListenUrl=http://0.0.0.0:11435. An environment variable always wins over the value in
 //    this file. Under the Windows Service, an operator copy at %ProgramData%\OllamaProxy\hostsettings.json
 //    overrides these shipped defaults (but still loses to environment variables).
 // =====================================================================================================
@@ -55,7 +55,7 @@
     // localhost. Set to false to disable the surface entirely — no admin page and no realtime connection,
     // leaving only the /health and /ready probes on this port.
     "Enabled": true,
-    "Url": "http://localhost:11435",
+    "ListenUrl": "http://localhost:11435",
     // How the admin surface persists backend API keys when it rewrites appsettings.json. This is a
     // deployment-level decision (shown read-only in the UI), not a per-apply choice. One of:
     //   "WriteToFile"     (default) : Keys are written into the file verbatim, for a self-contained

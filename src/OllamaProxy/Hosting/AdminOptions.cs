@@ -5,6 +5,7 @@
 using System.ComponentModel.DataAnnotations;
 
 using OllamaProxy.Admin.Config;
+using OllamaProxy.Configuration;
 
 namespace OllamaProxy.Hosting;
 
@@ -33,12 +34,12 @@ sealed class AdminOptions
 	/// <summary>
 	/// Gets or sets the absolute URL the outer chassis listens on, kept separate from the inner proxy's port
 	/// (<c>:11434</c>) so the two hosts never collide. Defaults to <c>http://localhost:11435</c>; override it
-	/// via configuration or the <c>Admin__Url</c> environment variable (for example to bind all interfaces
-	/// inside a container).
+	/// via configuration or the <c>Admin__ListenUrl</c> environment variable (for example to bind all
+	/// interfaces inside a container).
 	/// </summary>
 	[Required]
-	[Url]
-	public string Url { get; set; } = "http://localhost:11435";
+	[ListenUrl]
+	public string ListenUrl { get; set; } = "http://localhost:11435";
 
 	/// <summary>
 	/// Gets or sets whether the admin surface persists backend API keys into the proxy configuration file or

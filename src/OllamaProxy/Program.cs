@@ -96,8 +96,8 @@ static class Program
 		// any Kestrel:Endpoints or hosting-URL config (which by default overrides UseUrls, the well-known
 		// "Overriding address(es)" behavior) so the chassis stays on its admin port regardless of the inner
 		// proxy binding.
-		string adminUrl = builder.Configuration.GetValue<string>($"{AdminOptions.SectionName}:Url")
-		                  ?? new AdminOptions().Url;
+		string adminUrl = builder.Configuration.GetValue<string>($"{AdminOptions.SectionName}:ListenUrl") ??
+		                  new AdminOptions().ListenUrl;
 		builder.WebHost.UseUrls(adminUrl);
 		builder.WebHost.PreferHostingUrls(true);
 

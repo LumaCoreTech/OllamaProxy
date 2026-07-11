@@ -259,7 +259,7 @@ public partial class CustomActionsTests
 			"  },",
 			"  \"Admin\": {",
 			"    \"Enabled\": true,",
-			"    \"Url\": \"" + adminUrl + "\"",
+			"    \"ListenUrl\": \"" + adminUrl + "\"",
 			"  }",
 			"}");
 

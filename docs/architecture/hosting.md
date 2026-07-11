@@ -69,7 +69,7 @@ the **supervisor** — and then maps the probes and the admin surface. Reading t
    chassis on its *own* configured URL, so an ambient `ASPNETCORE_URLS` or a container's data-plane override
    (`OllamaProxy__ListenUrl`) cannot silently move the chassis onto the proxy port. This guards against
    *accidental* collisions from shared environment variables; it does not reconcile a deliberate one. If you
-   point `Admin:Url` and `OllamaProxy:ListenUrl` at the same address, the two hosts still collide and one
+   point `Admin:ListenUrl` and `OllamaProxy:ListenUrl` at the same address, the two hosts still collide and one
    fails to bind at startup. The defaults (`:11434` and `:11435`) keep them apart — keep them on distinct
    ports.
 

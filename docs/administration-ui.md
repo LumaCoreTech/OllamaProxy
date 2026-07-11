@@ -23,12 +23,18 @@ never exposed off-box without an explicit choice:
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `Admin.Enabled` | bool | `true` | Whether the UI is served at all. Set to `false` to disable it entirely — no admin page and no realtime connection, leaving only the `/health` and `/ready` probes on this port. |
-| `Admin.Url` | string | `http://localhost:11435` | The address the chassis listens on, deliberately separate from the proxy port (`:11434`) so the two hosts never collide. Use `http://0.0.0.0:11435` to listen on all interfaces (e.g. inside a container). |
+| `Admin.ListenUrl` | string | `http://localhost:11435` | The address the chassis listens on, deliberately separate from the proxy port (`:11434`) so the two hosts never collide. Use `http://0.0.0.0:11435` to listen on all interfaces (e.g. inside a container). |
 | `Host.Mode` | enum | `Auto` | How a failed inner-proxy **start** is handled: `Daemon` stays resident (for a Windows Service or systemd), `Foreground` fails fast (for a console/container), `Auto` picks per environment. A failed live **recycle** is always non-fatal — the previous inner host keeps serving. |
 
 Any key can be overridden by an environment variable using `__` (double underscore) as the separator —
-for example `Admin__Url=http://0.0.0.0:11435` or `Admin__Enabled=false` — which always wins over the
+for example `Admin__ListenUrl=http://0.0.0.0:11435` or `Admin__Enabled=false` — which always wins over the
 file.
+
+> [!IMPORTANT]
+> The host part of `Admin.ListenUrl` must name a **specific interface**: `localhost`, an IP literal (for
+> example `127.0.0.1` or `0.0.0.0`), or an explicit wildcard (`[::]`, `*`, `+`). Kestrel does **not** resolve
+> a DNS host name in a bind URL — it silently binds *every* interface instead. To avoid that quiet
+> over-exposure, a DNS host name such as `http://my-server:11435` is rejected at startup.
 
 With the defaults, open the UI at:
 
@@ -38,7 +44,7 @@ http://localhost:11435
 
 > [!NOTE]
 > The UI binds to `localhost` by default, so it is reachable only from the same machine. To administer a
-> remote or containerized deployment, set `Admin.Url` to a non-loopback address **and** put it behind your
+> remote or containerized deployment, set `Admin.ListenUrl` to a non-loopback address **and** put it behind your
 > own authenticating reverse proxy or network controls — the admin surface has no built-in authentication
 > and edits the live proxy configuration.
 
