@@ -53,6 +53,13 @@ public sealed class ProxyOptions : IValidatableObject
 	/// </summary>
 	public ReasoningDetailsCacheOptions ReasoningDetailsCache { get; init; } = new();
 
+	/// <summary>
+	/// Gets or sets the transport tuning shared by every outbound backend client: pooled-connection
+	/// lifetime (so DNS changes are honored) and connect timeout (so a dead IP among several fails over
+	/// quickly). The defaults are safe for the common case; see <see cref="BackendConnectionOptions"/>.
+	/// </summary>
+	public BackendConnectionOptions Connection { get; init; } = new();
+
 	/// <inheritdoc/>
 	public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
 	{
@@ -78,6 +85,13 @@ public sealed class ProxyOptions : IValidatableObject
 		// The reasoning-details cache owns its own sizing rules (sliding expiration and entry-cap bounds);
 		// validate it here too since the pipeline does not recurse into nested members.
 		foreach (ValidationResult result in ValidateChild(ReasoningDetailsCache, nameof(ReasoningDetailsCache)))
+		{
+			yield return result;
+		}
+
+		// The connection tuning owns its own range rules (pooled-connection lifetime and connect timeout);
+		// validate it here too since the pipeline does not recurse into nested members.
+		foreach (ValidationResult result in ValidateChild(Connection, nameof(Connection)))
 		{
 			yield return result;
 		}

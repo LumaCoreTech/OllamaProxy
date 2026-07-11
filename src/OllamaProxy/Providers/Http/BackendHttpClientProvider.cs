@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 // Project: https://github.com/LumaCoreTech/OllamaProxy
 
+using Microsoft.Extensions.Options;
+
+using OllamaProxy.Configuration;
 using OllamaProxy.Providers.Abstractions;
 
 namespace OllamaProxy.Providers.Http;
@@ -13,16 +16,27 @@ namespace OllamaProxy.Providers.Http;
 /// </summary>
 sealed class BackendHttpClientProvider : IBackendHttpClientProvider
 {
-	private readonly IHttpClientFactory mHttpClientFactory;
+	private readonly IHttpClientFactory       mHttpClientFactory;
+	private readonly BackendConnectionOptions mConnectionOptions;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="BackendHttpClientProvider"/> class.
 	/// </summary>
 	/// <param name="httpClientFactory">The factory used to materialize named backend clients.</param>
-	public BackendHttpClientProvider(IHttpClientFactory httpClientFactory)
+	/// <param name="proxyOptions">
+	/// The proxy options supplying the connection tuning used when building ad-hoc draft clients.
+	/// </param>
+	/// <exception cref="ArgumentNullException">
+	/// <paramref name="httpClientFactory"/> or <paramref name="proxyOptions"/> is <see langword="null"/>.
+	/// </exception>
+	public BackendHttpClientProvider(
+		IHttpClientFactory     httpClientFactory,
+		IOptions<ProxyOptions> proxyOptions)
 	{
 		ArgumentNullException.ThrowIfNull(httpClientFactory);
+		ArgumentNullException.ThrowIfNull(proxyOptions);
 		mHttpClientFactory = httpClientFactory;
+		mConnectionOptions = proxyOptions.Value.Connection;
 	}
 
 	/// <inheritdoc/>
@@ -42,7 +56,7 @@ sealed class BackendHttpClientProvider : IBackendHttpClientProvider
 		// from its inline options instead. Both paths share the same wire configuration via
 		// BackendHttpClientConfiguration so the draft preview behaves identically to a committed call.
 		return backend.Draft is { } draft
-			       ? BackendHttpClientConfiguration.CreateAdHocClient(draft)
+			       ? BackendHttpClientConfiguration.CreateAdHocClient(draft, mConnectionOptions)
 			       : CreateClient(backend.Name);
 	}
 }

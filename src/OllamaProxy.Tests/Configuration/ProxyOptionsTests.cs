@@ -249,9 +249,19 @@ public sealed class ProxyOptionsTests
 		// Arrange: two entries share the upstream "gpt-5" but expose distinct names — the supported variant case.
 		BackendOptions backend = ValidBackend();
 		backend.Models.Add(
-			new ModelRegistrationOptions { Name = "gpt-5-low", UpstreamModel = "gpt-5", ContextLength = 8192 });
+			new ModelRegistrationOptions
+			{
+				Name = "gpt-5-low",
+				UpstreamModel = "gpt-5",
+				ContextLength = 8192
+			});
 		backend.Models.Add(
-			new ModelRegistrationOptions { Name = "gpt-5-high", UpstreamModel = "gpt-5", ContextLength = 8192 });
+			new ModelRegistrationOptions
+			{
+				Name = "gpt-5-high",
+				UpstreamModel = "gpt-5",
+				ContextLength = 8192
+			});
 
 		// Act
 		List<ValidationResult> results = backend.Validate(new ValidationContext(backend)).ToList();
@@ -516,6 +526,80 @@ public sealed class ProxyOptionsTests
 
 		// Assert
 		Assert.Contains(results, r => r.MemberNames.Contains(nameof(ProxyOptions.ListenUrl)));
+	}
+
+	// --- Nested options validation wiring ---
+
+	/// <summary>
+	/// Verifies that <see cref="ProxyOptions.Validate"/> surfaces the nested
+	/// <see cref="RequestTracingOptions"/> failure, qualifying the member name with the
+	/// <c>RequestTracing</c> configuration path.
+	/// </summary>
+	[Fact]
+	public void Validate_WhenNestedRequestTracingInvalid_SurfacesPathQualifiedFailure()
+	{
+		// Arrange: tracing enabled with a non-positive file limit fails the nested tracing rule.
+		ProxyOptions options = new()
+		{
+			RequestTracing = { Enabled = true, MaxFiles = 0 }
+		};
+
+		// Act
+		List<ValidationResult> results = Validate(options);
+
+		// Assert
+		Assert.Contains(
+			results,
+			r => r.MemberNames.Contains(
+				$"{nameof(ProxyOptions.RequestTracing)}.{nameof(RequestTracingOptions.MaxFiles)}"));
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="ProxyOptions.Validate"/> surfaces the nested
+	/// <see cref="ReasoningDetailsCacheOptions"/> failure, qualifying the member name with the
+	/// <c>ReasoningDetailsCache</c> configuration path.
+	/// </summary>
+	[Fact]
+	public void Validate_WhenNestedReasoningDetailsCacheInvalid_SurfacesPathQualifiedFailure()
+	{
+		// Arrange: an entry cap below the allowed minimum fails the nested cache range rule.
+		ProxyOptions options = new()
+		{
+			ReasoningDetailsCache = { MaxEntries = ReasoningDetailsCacheOptions.MinimumMaxEntries - 1 }
+		};
+
+		// Act
+		List<ValidationResult> results = Validate(options);
+
+		// Assert
+		Assert.Contains(
+			results,
+			r => r.MemberNames.Contains(
+				$"{nameof(ProxyOptions.ReasoningDetailsCache)}.{nameof(ReasoningDetailsCacheOptions.MaxEntries)}"));
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="ProxyOptions.Validate"/> surfaces the nested
+	/// <see cref="BackendConnectionOptions"/> failure, qualifying the member name with the
+	/// <c>Connection</c> configuration path.
+	/// </summary>
+	[Fact]
+	public void Validate_WhenNestedConnectionInvalid_SurfacesPathQualifiedFailure()
+	{
+		// Arrange: a connect timeout below the allowed minimum fails the nested range rule.
+		ProxyOptions options = new()
+		{
+			Connection = { ConnectTimeoutSeconds = BackendConnectionOptions.MinimumConnectTimeoutSeconds - 1 }
+		};
+
+		// Act
+		List<ValidationResult> results = Validate(options);
+
+		// Assert
+		Assert.Contains(
+			results,
+			r => r.MemberNames.Contains(
+				$"{nameof(ProxyOptions.Connection)}.{nameof(BackendConnectionOptions.ConnectTimeoutSeconds)}"));
 	}
 
 	/// <summary>

@@ -13,6 +13,7 @@ owns the proxy listener URL and optional diagnostics / continuity features. The 
 | `Backends` | map | `{}` | Named upstream backends. An empty map is valid and starts the proxy with no models; add backends by file, environment, installer, or admin UI. Each backend carries its own `Mode` and `Models` registry. |
 | `RequestTracing` | object | _(off)_ | Optional per-request trace capture for debugging. Disabled by default. |
 | `ReasoningDetailsCache` | object | _(on)_ | Server-side cache for opaque `reasoning_details` blobs that some backends require across tool-call turns. Enabled by default. |
+| `Connection` | object | _(defaults)_ | Transport tuning shared by every outbound backend client: pooled-connection lifetime (DNS refresh) and connect timeout (fast fail-over). |
 
 ## Listener URL
 
@@ -473,6 +474,31 @@ Example:
 The cache is in-memory and process-local. It is a bounded continuity aid for active tool-calling
 conversations, not durable storage. Disabling it is safe, but backends that rely on those blobs may lose
 reasoning continuity across tool calls.
+
+## Backend connection tuning
+
+`Connection` tunes the transport shared by **every** outbound backend client — both the resilient clients
+registered at startup and the one-shot ad-hoc client used to preview a not-yet-committed (draft) backend.
+The defaults matter because the underlying `SocketsHttpHandler` otherwise keeps connections alive forever
+(never re-resolving DNS) and waits on the OS SYN timeout when a connect stalls:
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `PooledConnectionLifetimeSeconds` | int | `120` | How long a pooled connection may be reused before it is retired and a fresh one is opened, re-resolving DNS. Keeps a DNS change (failover, load-balancer rotation, a new A-record) from being missed until a restart. Must be between `1` and `3600`. |
+| `ConnectTimeoutSeconds` | int | `10` | How long a single TCP connect attempt may take before it is abandoned. When a hostname resolves to several addresses and one is dead, this bounds the wait before failing over to the next address. Must be between `1` and `120`. |
+
+Example:
+
+```json
+"Connection": {
+  "PooledConnectionLifetimeSeconds": 120,
+  "ConnectTimeoutSeconds": 10
+}
+```
+
+Both values are environment-overridable like any other key (see below), for example
+`OllamaProxy__Connection__ConnectTimeoutSeconds`. The defaults are safe for talking to DNS-named cloud
+backends; only raise them in an unusually latent environment or lower them to fail over even faster.
 
 ## Secrets and environment variables
 

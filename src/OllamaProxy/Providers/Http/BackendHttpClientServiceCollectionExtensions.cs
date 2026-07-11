@@ -61,6 +61,7 @@ static class BackendHttpClientServiceCollectionExtensions
 				.AddHttpClient(
 					BackendHttpClientNames.ForBackend(backendName),
 					client => BackendHttpClientConfiguration.Configure(client, backend))
+				.ConfigurePrimaryHttpMessageHandler(() => BackendHttpHandlerFactory.Create(options.Connection))
 				.AddStandardResilienceHandler(ConfigureResilience);
 		}
 

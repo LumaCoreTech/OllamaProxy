@@ -71,18 +71,25 @@ static class BackendHttpClientConfiguration
 	/// from the supplied options. Unlike the committed clients registered at startup, this ad-hoc client
 	/// carries <em>no</em> resilience pipeline: a draft fetch is a rare, interactive operator action, and
 	/// discovery and probing impose their own per-attempt timeouts and cancellation, so the extra retry
-	/// machinery would add cost without value. The caller owns the returned client and must dispose it.
+	/// machinery would add cost without value. Its transport handler is built from
+	/// <paramref name="connection"/> so a draft preview establishes connections with the same DNS-refresh
+	/// and connect-timeout behavior as a committed call. The caller owns the returned client and must
+	/// dispose it.
 	/// </summary>
 	/// <param name="backend">The draft backend options supplying the address and credentials.</param>
+	/// <param name="connection">The connection tuning supplying the transport handler behavior.</param>
 	/// <returns>A configured, caller-owned client targeting the draft backend.</returns>
-	/// <exception cref="ArgumentNullException"><paramref name="backend"/> is <see langword="null"/>.</exception>
-	public static HttpClient CreateAdHocClient(BackendOptions backend)
+	/// <exception cref="ArgumentNullException">
+	/// <paramref name="backend"/> or <paramref name="connection"/> is <see langword="null"/>.
+	/// </exception>
+	public static HttpClient CreateAdHocClient(BackendOptions backend, BackendConnectionOptions connection)
 	{
 		ArgumentNullException.ThrowIfNull(backend);
+		ArgumentNullException.ThrowIfNull(connection);
 
 		// Default disposeHandler:true so disposing the client tears down its handler and socket pool,
 		// correct for a one-shot client that is not pooled across draft fetches.
-		HttpClient client = new();
+		HttpClient client = new(BackendHttpHandlerFactory.Create(connection));
 		Configure(client, backend);
 		return client;
 	}

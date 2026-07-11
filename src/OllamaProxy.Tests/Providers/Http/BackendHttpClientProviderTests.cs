@@ -4,6 +4,8 @@
 
 using System.Net.Http.Headers;
 
+using Microsoft.Extensions.Options;
+
 using OllamaProxy.Configuration;
 using OllamaProxy.Providers.Abstractions;
 using OllamaProxy.Providers.Http;
@@ -36,6 +38,13 @@ public sealed class BackendHttpClientProviderTests
 
 	private const string DraftApiKey = "draft-secret-key";
 
+	/// <summary>
+	/// Wraps a default <see cref="ProxyOptions"/> as <see cref="IOptions{TOptions}"/> for the provider
+	/// constructor, which reads only the connection tuning from it.
+	/// </summary>
+	/// <returns>The default proxy options wrapped for injection.</returns>
+	private static IOptions<ProxyOptions> ProxyOptions() => Options.Create(new ProxyOptions());
+
 	#region CreateClient(string)
 
 	/// <summary>
@@ -47,7 +56,7 @@ public sealed class BackendHttpClientProviderTests
 	{
 		// Arrange
 		RecordingHttpClientFactory factory = new();
-		BackendHttpClientProvider sut = new(factory);
+		BackendHttpClientProvider sut = new(factory, ProxyOptions());
 
 		// Act
 		using HttpClient client = sut.CreateClient("cloud");
@@ -67,7 +76,7 @@ public sealed class BackendHttpClientProviderTests
 	public void CreateClient_WhenBackendNameIsEmptyOrWhiteSpace_ThrowsArgumentException(string backendName)
 	{
 		// Arrange
-		BackendHttpClientProvider sut = new(new RecordingHttpClientFactory());
+		BackendHttpClientProvider sut = new(new RecordingHttpClientFactory(), ProxyOptions());
 
 		// Act + Assert
 		var exception = Assert.Throws<ArgumentException>(() => sut.CreateClient(backendName));
@@ -87,7 +96,7 @@ public sealed class BackendHttpClientProviderTests
 	{
 		// Arrange
 		RecordingHttpClientFactory factory = new();
-		BackendHttpClientProvider sut = new(factory);
+		BackendHttpClientProvider sut = new(factory, ProxyOptions());
 
 		// Act
 		using HttpClient client = sut.CreateClient(new BackendContext("cloud"));
@@ -106,7 +115,7 @@ public sealed class BackendHttpClientProviderTests
 	{
 		// Arrange: a draft context carrying inline options for a backend that is not yet committed.
 		RecordingHttpClientFactory factory = new();
-		BackendHttpClientProvider sut = new(factory);
+		BackendHttpClientProvider sut = new(factory, ProxyOptions());
 		BackendOptions draft = new() { BaseUrl = DraftBaseUrl, ProviderType = "openai", ApiKey = DraftApiKey };
 
 		// Act
@@ -127,7 +136,7 @@ public sealed class BackendHttpClientProviderTests
 	public void CreateClient_WhenContextIsNull_ThrowsArgumentNullException()
 	{
 		// Arrange
-		BackendHttpClientProvider sut = new(new RecordingHttpClientFactory());
+		BackendHttpClientProvider sut = new(new RecordingHttpClientFactory(), ProxyOptions());
 
 		// Act + Assert
 		var exception = Assert.Throws<ArgumentNullException>(() => sut.CreateClient((BackendContext)null!));
