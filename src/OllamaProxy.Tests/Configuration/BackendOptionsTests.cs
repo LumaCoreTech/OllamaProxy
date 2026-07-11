@@ -14,8 +14,12 @@ namespace OllamaProxy.Tests.Configuration;
 /// (<see cref="BackendOptions.Probing"/>, then the <see cref="BackendOptions.Models"/> registry), and finally the
 /// reference-property set is pinned so a new reference member cannot be added without its own deep-copy coverage.
 /// </summary>
+/// <remarks>
+/// For <see cref="BackendOptions.Validate"/> coverage, see the validation companion partial
+/// (BackendOptionsTests.Validate.cs).
+/// </remarks>
 [Trait("Category", "Unit")]
-public sealed class BackendOptionsTests
+public sealed partial class BackendOptionsTests
 {
 	/// <summary>
 	/// Builds a backend with every property set to a distinctive, non-default value — including a mutated
