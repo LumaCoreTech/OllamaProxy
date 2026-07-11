@@ -51,7 +51,8 @@ for example, serve a lightweight local model and a heavy cloud model side by sid
 
 > [!NOTE]
 > Built on **.NET 10** / ASP.NET Core Minimal API. Single self-contained service, configured via a
-> small `appsettings.json` and environment variables.
+> small `appsettings.json` and environment variables. Runs anywhere .NET 10 does — **Linux, Windows,
+> and macOS** — as a Docker container, a Windows service (MSI), or a plain `dotnet run`.
 
 ---
 
@@ -167,6 +168,32 @@ Want to see what each backend offers and pin models without touching the file? T
 > If startup fails immediately with a validation error, the most common cause is a missing or
 > too-short API key. Every backend requires a key of at least **8 characters** — for local backends
 > that ignore auth, supply any placeholder of sufficient length.
+
+---
+
+## Deployment & platforms
+
+OllamaProxy is a cross-platform **.NET 10** service — the same self-contained build runs on **Linux,
+Windows, and macOS**, and CI builds and tests it on both **Windows** and **Ubuntu** (see the badges at
+the top). There is no platform-specific code path; pick the packaging that matches your scenario:
+
+| Way to run | Runs on | Best for |
+| --- | --- | --- |
+| **Docker / Compose** | Any host with a container runtime (Linux, Windows, macOS) | Servers, homelabs, NAS, cloud — a one-command start with secrets injected at run time. |
+| **Windows service (MSI)** | Windows x64 — auto-start service, no .NET prerequisite | Desktops and workstations that should run the proxy in the background without a terminal. |
+| **`dotnet run` / self-contained** | Anywhere the .NET 10 SDK or runtime is present | Development, quick trials, and custom hosting where you control the process yourself. |
+
+Whichever you choose, the client-facing contract is identical: the Ollama-compatible surface on
+`http://localhost:11434` and the administration UI on `http://localhost:11435`.
+
+→ Full instructions — Docker/Compose, the Windows MSI (interactive and silent), and signing the
+installer yourself: **[Deployment](docs/deployment.md)**.
+
+> [!NOTE]
+> The released MSI is **not code-signed**, so Windows **SmartScreen** and **User Account Control** flag
+> it as coming from an unknown publisher ("Windows protected your PC"). This is expected for a
+> community build and does **not** mean the file is unsafe — click **More info → Run anyway**, or
+> [sign the installer yourself](docs/deployment.md#signing-the-installer-yourself) to remove the warning.
 
 ---
 
