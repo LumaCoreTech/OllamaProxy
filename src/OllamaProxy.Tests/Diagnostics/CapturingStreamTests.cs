@@ -433,9 +433,10 @@ public sealed class CapturingStreamTests
 
 		// Act: dispose the wrapper only.
 		capturing.Dispose();
+		inner.Write("!"u8.ToArray());
 
-		// Assert: the inner stream is not disposed, so its buffered content is still readable.
-		Assert.Equal("hello"u8.ToArray(), inner.ToArray());
+		// Assert: the inner stream is not disposed, so it remains writable after the wrapper is gone.
+		Assert.Equal("hello!"u8.ToArray(), inner.ToArray());
 	}
 
 	// --- 8. UTF-8 trim edges (truncated captures) ---

@@ -131,7 +131,9 @@ public sealed class OpenAiHttpTests
 			"api_error",
 			CancellationToken.None);
 
-		// Assert
+		// Assert: neither headers nor body are touched once headers were already committed.
+		Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+		Assert.Null(context.Response.ContentType);
 		Assert.Empty(body.ToArray());
 	}
 
@@ -205,6 +207,18 @@ public sealed class OpenAiHttpTests
 
 		// Assert
 		Assert.Equal("data: [DONE]\n\n", HttpTestContext.ReadBody(body));
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="OpenAiHttp.WriteSseDoneAsync"/> rejects a <see langword="null"/> context.
+	/// </summary>
+	[Fact]
+	public async Task WriteSseDoneAsync_WhenContextIsNull_ThrowsArgumentNullException()
+	{
+		// Act + Assert
+		var exception = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+			                OpenAiHttp.WriteSseDoneAsync(null!, CancellationToken.None));
+		Assert.Equal("context", exception.ParamName);
 	}
 
 	#endregion

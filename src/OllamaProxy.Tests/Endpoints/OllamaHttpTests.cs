@@ -125,7 +125,9 @@ public sealed class OllamaHttpTests
 			"too late",
 			CancellationToken.None);
 
-		// Assert: nothing was written to the body since headers were already committed.
+		// Assert: neither headers nor body are touched once headers were already committed.
+		Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+		Assert.Null(context.Response.ContentType);
 		Assert.Empty(body.ToArray());
 	}
 
