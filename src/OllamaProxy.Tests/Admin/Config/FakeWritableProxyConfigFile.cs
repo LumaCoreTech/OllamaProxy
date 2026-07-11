@@ -67,6 +67,12 @@ sealed class FakeWritableProxyConfigFile : IWritableProxyConfigFile
 	/// </summary>
 	public Exception? WriteException { get; set; }
 
+	/// <summary>
+	/// Gets or sets an exception that <see cref="DeleteAsync"/> faults with instead of deleting, used to model a
+	/// failed rollback delete of a first-ever write (for example a locked or read-only file).
+	/// </summary>
+	public Exception? DeleteException { get; set; }
+
 	/// <inheritdoc/>
 	public Task<string?> ReadAsync(CancellationToken cancellationToken)
 	{
@@ -95,6 +101,11 @@ sealed class FakeWritableProxyConfigFile : IWritableProxyConfigFile
 	/// <inheritdoc/>
 	public Task DeleteAsync(CancellationToken cancellationToken)
 	{
+		if (DeleteException is not null)
+		{
+			return Task.FromException(DeleteException);
+		}
+
 		mContent = null;
 		DeleteCount++;
 

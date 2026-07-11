@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 // Project: https://github.com/LumaCoreTech/OllamaProxy
 
+using System.Text.Json;
+
 using Microsoft.Extensions.Logging.Abstractions;
 
 using OllamaProxy.Admin.Config;
@@ -169,6 +171,36 @@ public sealed partial class ProxyConfigApplierTests
 		Assert.Equal(["rejected reason"], result.Errors);
 	}
 
+	/// <summary>
+	/// Verifies that a rollback DELETE that itself fails is also swallowed: when a first-ever write is rejected
+	/// and the compensating delete faults, the result still reports <see cref="ApplyOutcome.ValidationRejected"/>
+	/// with the recycle's errors, because the live proxy is unaffected and those errors are the operator's
+	/// actionable problem.
+	/// </summary>
+	[Fact]
+	public async Task ApplyAsync_WhenRollbackDeleteFails_StillReportsValidationErrors()
+	{
+		// Arrange: NO previous file, so the rollback takes the delete arm; the recycle rejects and the delete
+		// then faults (e.g. the just-created file is locked). The applier must swallow the delete failure and
+		// still surface the validation errors.
+		FakeWritableProxyConfigFile file = new(initialContent: null);
+		FakeWriter writer = new(fileToMutateOnWrite: file);
+		FakeSupervisor supervisor = new(RecycleResult.Failed(["rejected reason"]));
+		ProxyConfigApplier sut = CreateSut(writer, file, supervisor);
+
+		// The rollback goes through the file's DeleteAsync (no previous snapshot); arm it to throw on that call.
+		file.DeleteException = new UnauthorizedAccessException("config file is locked");
+
+		// Act
+		ApplyResult result = await sut.ApplyAsync(
+			                     DesiredState(),
+			                     CancellationToken.None);
+
+		// Assert: the validation errors win over the swallowed rollback delete failure.
+		Assert.Equal(ApplyOutcome.ValidationRejected, result.Outcome);
+		Assert.Equal(["rejected reason"], result.Errors);
+	}
+
 	// --- 3. WriteFailed ---
 
 	/// <summary>
@@ -193,6 +225,56 @@ public sealed partial class ProxyConfigApplierTests
 		Assert.Equal(ApplyOutcome.WriteFailed, result.Outcome);
 		Assert.False(result.Success);
 		Assert.Equal(["disk full"], result.Errors);
+		Assert.Equal(0, supervisor.RecycleCount);
+	}
+
+	/// <summary>
+	/// Verifies that a <see cref="JsonException"/> from the writer — a serialization fault while rendering the
+	/// proxy section — is caught as a write failure: the applier reports <see cref="ApplyOutcome.WriteFailed"/>
+	/// with the exception message and never recycles.
+	/// </summary>
+	[Fact]
+	public async Task ApplyAsync_WhenWriteThrowsJsonException_ReportsWriteFailed()
+	{
+		// Arrange: the writer faults with a serialization error, one of the write-failure exception types.
+		FakeWritableProxyConfigFile file = new(initialContent: "{ \"previous\": true }");
+		FakeWriter writer = new(writeException: new JsonException("malformed section"));
+		FakeSupervisor supervisor = new(RecycleResult.Succeeded);
+		ProxyConfigApplier sut = CreateSut(writer, file, supervisor);
+
+		// Act
+		ApplyResult result = await sut.ApplyAsync(
+			                     DesiredState(),
+			                     CancellationToken.None);
+
+		// Assert
+		Assert.Equal(ApplyOutcome.WriteFailed, result.Outcome);
+		Assert.Equal(["malformed section"], result.Errors);
+		Assert.Equal(0, supervisor.RecycleCount);
+	}
+
+	/// <summary>
+	/// Verifies that an <see cref="UnauthorizedAccessException"/> from the writer — a permission fault writing the
+	/// config file — is caught as a write failure: the applier reports <see cref="ApplyOutcome.WriteFailed"/> with
+	/// the exception message and never recycles.
+	/// </summary>
+	[Fact]
+	public async Task ApplyAsync_WhenWriteThrowsUnauthorizedAccess_ReportsWriteFailed()
+	{
+		// Arrange: the writer faults with a permission error, one of the write-failure exception types.
+		FakeWritableProxyConfigFile file = new(initialContent: "{ \"previous\": true }");
+		FakeWriter writer = new(writeException: new UnauthorizedAccessException("access denied"));
+		FakeSupervisor supervisor = new(RecycleResult.Succeeded);
+		ProxyConfigApplier sut = CreateSut(writer, file, supervisor);
+
+		// Act
+		ApplyResult result = await sut.ApplyAsync(
+			                     DesiredState(),
+			                     CancellationToken.None);
+
+		// Assert
+		Assert.Equal(ApplyOutcome.WriteFailed, result.Outcome);
+		Assert.Equal(["access denied"], result.Errors);
 		Assert.Equal(0, supervisor.RecycleCount);
 	}
 

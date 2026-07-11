@@ -187,8 +187,7 @@ public sealed partial class CapabilityProbingOptionsTests
 		List<ValidationResult> atMinimum = Validate(
 			new CapabilityProbingOptions { MaxConcurrentProbes = CapabilityProbingOptions.MinimumMaxConcurrentProbes });
 		List<ValidationResult> atMaximum = Validate(
-			new CapabilityProbingOptions
-				{ MaxConcurrentProbes = CapabilityProbingOptions.MaximumMaxConcurrentProbes });
+			new CapabilityProbingOptions { MaxConcurrentProbes = CapabilityProbingOptions.MaximumMaxConcurrentProbes });
 
 		// Assert
 		Assert.Empty(atMinimum);
