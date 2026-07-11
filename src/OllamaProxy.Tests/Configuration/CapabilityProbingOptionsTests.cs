@@ -13,8 +13,11 @@ namespace OllamaProxy.Tests.Configuration;
 /// carried into a fresh instance, the other pins the (currently empty) set of reference-typed properties so a
 /// future reference member cannot be added without its own deep-copy coverage.
 /// </summary>
+/// <remarks>
+/// For the <c>Validate()</c> gate coverage, see the companion partial (CapabilityProbingOptionsTests.Validate.cs).
+/// </remarks>
 [Trait("Category", "Unit")]
-public sealed class CapabilityProbingOptionsTests
+public sealed partial class CapabilityProbingOptionsTests
 {
 	/// <summary>
 	/// Builds a probing block with every property set to a distinctive, non-default value (within its valid
