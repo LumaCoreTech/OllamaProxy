@@ -37,6 +37,19 @@ namespace OllamaProxy.Tests.Diagnostics;
 ///         (WhenCorrelationIdContainsPathSeparator).
 ///         </description>
 ///     </item>
+///     <item>
+///         <description>
+///         Retention (ring buffer): once the directory exceeds <c>MaxFiles</c> the oldest traces are evicted so
+///         exactly the newest N survive (WhenDirectoryExceedsMaxFiles); a directory holding exactly the cap is
+///         left untouched (WhenDirectoryAtMaxFiles).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Argument guards: the constructor rejects null options/dataDirectory/logger, and WriteAsync rejects a
+///         null trace (Constructor_When*IsNull, WriteAsync_WhenTraceIsNull).
+///         </description>
+///     </item>
 /// </list>
 /// </remarks>
 [Trait("Category", "Unit")]
@@ -92,6 +105,19 @@ public sealed class FileRequestTraceSinkTests : IDisposable
 	private static RequestTrace CreateTrace(string correlationId) => new(
 		correlationId,
 		DateTimeOffset.UnixEpoch,
+		"POST",
+		"/api/chat");
+
+	/// <summary>
+	/// Builds a trace started at a specific instant, so its file-name timestamp prefix can be ordered relative
+	/// to other traces — used by the retention tests, where eviction order is driven by the ordinal name sort.
+	/// </summary>
+	/// <param name="correlationId">The correlation id that becomes the file-name suffix.</param>
+	/// <param name="startedUtc">The start instant that becomes the file-name timestamp prefix.</param>
+	/// <returns>The trace.</returns>
+	private static RequestTrace CreateTrace(string correlationId, DateTimeOffset startedUtc) => new(
+		correlationId,
+		startedUtc,
 		"POST",
 		"/api/chat");
 
@@ -182,5 +208,123 @@ public sealed class FileRequestTraceSinkTests : IDisposable
 		// Assert: one file, written under the sanitized name with the ':' turned into '_'.
 		string name = Assert.Single(TraceFileNames());
 		Assert.Equal($"{EpochPrefix}_0HND1234_00000001.json", name);
+	}
+
+	// --- 3. Retention (ring buffer) ---
+
+	/// <summary>
+	/// Verifies that once the directory exceeds <see cref="RequestTracingOptions.MaxFiles"/>,
+	/// <see cref="FileRequestTraceSink.WriteAsync"/> evicts the oldest traces so exactly the newest
+	/// <c>MaxFiles</c> survive, keeping a long-running proxy from filling the disk.
+	/// </summary>
+	[Fact]
+	public async Task WriteAsync_WhenDirectoryExceedsMaxFiles_EvictsOldestTraces()
+	{
+		// Arrange: a cap of 2, then five traces one second apart so their timestamp-prefixed names sort by age.
+		FileRequestTraceSink sink = CreateSink(maxFiles: 2);
+		for (int index = 0; index < 5; index++)
+		{
+			DateTimeOffset startedUtc = DateTimeOffset.UnixEpoch.AddSeconds(index);
+			RequestTrace trace = CreateTrace($"corr-{index}", startedUtc);
+
+			// Act: each write triggers a retention scan; the last three writes must evict the three oldest files.
+			await sink.WriteAsync(trace, CancellationToken.None);
+		}
+
+		// Assert: only the two newest traces (indexes 3 and 4) remain; the three oldest were evicted.
+		string[] names = TraceFileNames();
+		Assert.Equal(2, names.Length);
+		Assert.Equal($"{DateTimeOffset.UnixEpoch.AddSeconds(3).UtcDateTime:yyyyMMdd-HHmmssfff}_corr-3.json", names[0]);
+		Assert.Equal($"{DateTimeOffset.UnixEpoch.AddSeconds(4).UtcDateTime:yyyyMMdd-HHmmssfff}_corr-4.json", names[1]);
+	}
+
+	/// <summary>
+	/// Verifies that a directory holding exactly <see cref="RequestTracingOptions.MaxFiles"/> traces is left
+	/// untouched by <see cref="FileRequestTraceSink.WriteAsync"/> — eviction begins only when the cap is
+	/// exceeded, not when it is merely reached.
+	/// </summary>
+	[Fact]
+	public async Task WriteAsync_WhenDirectoryAtMaxFiles_KeepsAllTraces()
+	{
+		// Arrange: a cap of 3 and exactly three traces one second apart.
+		FileRequestTraceSink sink = CreateSink(maxFiles: 3);
+		for (int index = 0; index < 3; index++)
+		{
+			RequestTrace trace = CreateTrace($"corr-{index}", DateTimeOffset.UnixEpoch.AddSeconds(index));
+
+			// Act
+			await sink.WriteAsync(trace, CancellationToken.None);
+		}
+
+		// Assert: all three survive — the count equals the cap, so nothing is over the limit to evict.
+		Assert.Equal(3, TraceFileNames().Length);
+	}
+
+	// --- 4. Argument guards ---
+
+	/// <summary>
+	/// Verifies that the constructor rejects a <see langword="null"/> <c>options</c> argument, since the sink
+	/// cannot resolve its directory or file cap without it.
+	/// </summary>
+	[Fact]
+	public void Constructor_WhenOptionsIsNull_ThrowsArgumentNullException()
+	{
+		// Arrange + Act + Assert
+		var exception = Assert.Throws<ArgumentNullException>(() => new FileRequestTraceSink(
+			null!,
+			new DataDirectory(AppContext.BaseDirectory),
+			NullLogger<FileRequestTraceSink>.Instance));
+		Assert.Equal("options", exception.ParamName);
+	}
+
+	/// <summary>
+	/// Verifies that the constructor rejects a <see langword="null"/> <c>dataDirectory</c> argument, since it
+	/// resolves a relative trace directory to its absolute path.
+	/// </summary>
+	[Fact]
+	public void Constructor_WhenDataDirectoryIsNull_ThrowsArgumentNullException()
+	{
+		// Arrange
+		ProxyOptions proxy = new() { RequestTracing = { Directory = mDirectory } };
+
+		// Act + Assert
+		var exception = Assert.Throws<ArgumentNullException>(() => new FileRequestTraceSink(
+			Options.Create(proxy),
+			null!,
+			NullLogger<FileRequestTraceSink>.Instance));
+		Assert.Equal("dataDirectory", exception.ParamName);
+	}
+
+	/// <summary>
+	/// Verifies that the constructor rejects a <see langword="null"/> <c>logger</c> argument.
+	/// </summary>
+	[Fact]
+	public void Constructor_WhenLoggerIsNull_ThrowsArgumentNullException()
+	{
+		// Arrange
+		ProxyOptions proxy = new() { RequestTracing = { Directory = mDirectory } };
+
+		// Act + Assert
+		var exception = Assert.Throws<ArgumentNullException>(() => new FileRequestTraceSink(
+			Options.Create(proxy),
+			new DataDirectory(AppContext.BaseDirectory),
+			null!));
+		Assert.Equal("logger", exception.ParamName);
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="FileRequestTraceSink.WriteAsync"/> rejects a <see langword="null"/> trace, so a
+	/// programming error surfaces immediately rather than producing an empty or malformed file.
+	/// </summary>
+	[Fact]
+	public async Task WriteAsync_WhenTraceIsNull_ThrowsArgumentNullException()
+	{
+		// Arrange
+		FileRequestTraceSink sink = CreateSink();
+
+		// Act + Assert
+		var exception =
+			await Assert.ThrowsAsync<ArgumentNullException>(() => sink.WriteAsync(null!, CancellationToken.None));
+		Assert.Equal("trace", exception.ParamName);
 	}
 }
