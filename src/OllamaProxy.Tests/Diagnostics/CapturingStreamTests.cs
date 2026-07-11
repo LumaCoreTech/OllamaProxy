@@ -39,6 +39,33 @@ namespace OllamaProxy.Tests.Diagnostics;
 ///     <item>
 ///         <description>Construction: a non-positive cap is rejected; a null inner stream is rejected.</description>
 ///     </item>
+///     <item>
+///         <description>
+///         Delegation: the read/seek/query surface (CanRead/CanSeek/CanWrite, Length, Position, Flush, FlushAsync,
+///         Read, Seek, SetLength) forwards to the inner stream, since only the write path is observed
+///         (*_DelegatesToInner).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Synchronous write: the byte[]-offset-count overload forwards and captures the addressed slice
+///         (Write_WhenCalled_ForwardsAndCapturesSlice).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         Disposal: disposing the wrapper releases only its capture buffer and leaves the inner stream — owned
+///         by the HTTP server — usable (Dispose_WhenCalled_LeavesInnerUsable).
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///         UTF-8 trim edges (truncated captures only): a complete final multi-byte sequence at the cut is kept
+///         whole (WhenCutKeepsCompleteSequence); an invalid lead byte at the cut is kept verbatim
+///         (WhenCutEndsInInvalidLead); a bare continuation run with no lead byte is kept verbatim
+///         (WhenCutIsAllContinuationBytes).
+///         </description>
+///     </item>
 /// </list>
 /// </remarks>
 [Trait("Category", "Unit")]
@@ -197,8 +224,7 @@ public sealed class CapturingStreamTests
 		using MemoryStream inner = new();
 
 		// Act + Assert
-		var ex =
-			Assert.Throws<ArgumentOutOfRangeException>(() => new CapturingStream(inner, maxBytes));
+		var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new CapturingStream(inner, maxBytes));
 		Assert.Equal("maxBytes", ex.ParamName);
 	}
 
@@ -210,8 +236,272 @@ public sealed class CapturingStreamTests
 	public void Constructor_WhenInnerNull_ThrowsArgumentNullException()
 	{
 		// Act + Assert
-		var ex =
-			Assert.Throws<ArgumentNullException>(() => new CapturingStream(null!, maxBytes: 4));
+		var ex = Assert.Throws<ArgumentNullException>(() => new CapturingStream(null!, maxBytes: 4));
 		Assert.Equal("inner", ex.ParamName);
+	}
+
+	// --- 5. Delegation to the inner stream ---
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.CanRead"/>, <see cref="CapturingStream.CanSeek"/>, and
+	/// <see cref="CapturingStream.CanWrite"/> report the inner stream's capabilities, since capability
+	/// queries are pure pass-through.
+	/// </summary>
+	[Fact]
+	public void Capabilities_WhenQueried_DelegateToInner()
+	{
+		// Arrange
+		(MemoryStream inner, CapturingStream capturing) = CreateStream(maxBytes: 4);
+
+		// Act + Assert: a MemoryStream is readable, seekable, and writable, and the wrapper mirrors that.
+		Assert.Equal(inner.CanRead, capturing.CanRead);
+		Assert.Equal(inner.CanSeek, capturing.CanSeek);
+		Assert.Equal(inner.CanWrite, capturing.CanWrite);
+		Assert.True(capturing.CanRead);
+		Assert.True(capturing.CanSeek);
+		Assert.True(capturing.CanWrite);
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.Length"/> reports the inner stream's length, since the
+	/// wrapper keeps no length of its own.
+	/// </summary>
+	[Fact]
+	public async Task Length_WhenQueried_DelegatesToInner()
+	{
+		// Arrange
+		(MemoryStream inner, CapturingStream capturing) = CreateStream(maxBytes: 4);
+		await capturing.WriteAsync("hello world"u8.ToArray());
+
+		// Act + Assert: the forwarded payload defines the inner length regardless of the capture cap.
+		Assert.Equal(11, capturing.Length);
+		Assert.Equal(inner.Length, capturing.Length);
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.Position"/> reads and writes the inner stream's position,
+	/// since seeking is delegated wholesale.
+	/// </summary>
+	[Fact]
+	public async Task Position_WhenSet_DelegatesToInner()
+	{
+		// Arrange
+		(MemoryStream inner, CapturingStream capturing) = CreateStream(maxBytes: 4);
+		await capturing.WriteAsync("hello"u8.ToArray());
+
+		// Act: rewinding the wrapper must rewind the inner stream.
+		capturing.Position = 1;
+
+		// Assert
+		Assert.Equal(1, capturing.Position);
+		Assert.Equal(inner.Position, capturing.Position);
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.Read"/> pulls bytes from the inner stream, since the read
+	/// path is unobserved pass-through.
+	/// </summary>
+	[Fact]
+	public async Task Read_WhenCalled_DelegatesToInner()
+	{
+		// Arrange
+		(MemoryStream _, CapturingStream capturing) = CreateStream(maxBytes: 4);
+		await capturing.WriteAsync("hello"u8.ToArray());
+		capturing.Position = 0;
+		byte[] destination = new byte[5];
+
+		// Act
+		int read = capturing.Read(destination, 0, destination.Length);
+
+		// Assert: the bytes just written are read straight back out of the inner stream.
+		Assert.Equal(5, read);
+		Assert.Equal("hello"u8.ToArray(), destination);
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.Seek"/> repositions the inner stream, since seeking is a
+	/// direct delegation.
+	/// </summary>
+	[Fact]
+	public async Task Seek_WhenCalled_DelegatesToInner()
+	{
+		// Arrange
+		(MemoryStream inner, CapturingStream capturing) = CreateStream(maxBytes: 4);
+		await capturing.WriteAsync("hello"u8.ToArray());
+
+		// Act
+		long position = capturing.Seek(2, SeekOrigin.Begin);
+
+		// Assert
+		Assert.Equal(2, position);
+		Assert.Equal(inner.Position, capturing.Position);
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.SetLength"/> resizes the inner stream, since length changes
+	/// are delegated without affecting the capture buffer.
+	/// </summary>
+	[Fact]
+	public async Task SetLength_WhenCalled_DelegatesToInner()
+	{
+		// Arrange
+		(MemoryStream inner, CapturingStream capturing) = CreateStream(maxBytes: 4);
+		await capturing.WriteAsync("hello"u8.ToArray());
+
+		// Act: truncating the inner stream must not disturb what was already captured.
+		capturing.SetLength(2);
+
+		// Assert
+		Assert.Equal(2, capturing.Length);
+		Assert.Equal(2, inner.Length);
+		Assert.Equal("hell", capturing.GetCapturedText());
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.Flush"/> forwards to the inner stream and leaves both the
+	/// forwarded and captured bytes intact, since flushing is pure delegation.
+	/// </summary>
+	[Fact]
+	public async Task Flush_WhenCalled_DelegatesToInner()
+	{
+		// Arrange
+		(MemoryStream inner, CapturingStream capturing) = CreateStream(maxBytes: 8);
+		await capturing.WriteAsync("hello"u8.ToArray());
+
+		// Act
+		capturing.Flush();
+
+		// Assert: flushing is a no-op for content on a MemoryStream, so nothing is lost either side.
+		Assert.Equal("hello"u8.ToArray(), inner.ToArray());
+		Assert.Equal("hello", capturing.GetCapturedText());
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.FlushAsync"/> forwards to the inner stream and leaves both
+	/// the forwarded and captured bytes intact, since the async flush is pure delegation.
+	/// </summary>
+	[Fact]
+	public async Task FlushAsync_WhenCalled_DelegatesToInner()
+	{
+		// Arrange
+		(MemoryStream inner, CapturingStream capturing) = CreateStream(maxBytes: 8);
+		await capturing.WriteAsync("hello"u8.ToArray());
+
+		// Act
+		await capturing.FlushAsync();
+
+		// Assert
+		Assert.Equal("hello"u8.ToArray(), inner.ToArray());
+		Assert.Equal("hello", capturing.GetCapturedText());
+	}
+
+	// --- 6. Synchronous write overload ---
+
+	/// <summary>
+	/// Verifies that the synchronous <see cref="CapturingStream.Write(byte[], int, int)"/> overload
+	/// forwards the addressed slice to the inner stream and captures only that slice, mirroring the async
+	/// path but exercising the offset/count arithmetic.
+	/// </summary>
+	[Fact]
+	public void Write_WhenCalled_ForwardsAndCapturesSlice()
+	{
+		// Arrange: write only the middle "llo" slice of the payload via offset/count.
+		(MemoryStream inner, CapturingStream capturing) = CreateStream(maxBytes: 8);
+		byte[] payload = "hello"u8.ToArray();
+
+		// Act
+		capturing.Write(payload, 2, 3);
+
+		// Assert: both the inner stream and the capture see the addressed slice, not the whole array.
+		Assert.Equal("llo"u8.ToArray(), inner.ToArray());
+		Assert.Equal("llo", capturing.GetCapturedText());
+		Assert.False(capturing.Truncated);
+	}
+
+	// --- 7. Disposal ---
+
+	/// <summary>
+	/// Verifies that disposing a <see cref="CapturingStream"/> releases only its own capture buffer and
+	/// leaves the inner stream usable, since the inner stream is owned by the HTTP server, not the wrapper.
+	/// </summary>
+	[Fact]
+	public async Task Dispose_WhenCalled_LeavesInnerUsable()
+	{
+		// Arrange
+		(MemoryStream inner, CapturingStream capturing) = CreateStream(maxBytes: 8);
+		await capturing.WriteAsync("hello"u8.ToArray());
+
+		// Act: dispose the wrapper only.
+		capturing.Dispose();
+
+		// Assert: the inner stream is not disposed, so its buffered content is still readable.
+		Assert.Equal("hello"u8.ToArray(), inner.ToArray());
+	}
+
+	// --- 8. UTF-8 trim edges (truncated captures) ---
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.GetCapturedText"/> keeps a complete multi-byte sequence
+	/// that happens to end exactly at the truncation boundary, since only a genuinely split tail should be
+	/// dropped.
+	/// </summary>
+	[Fact]
+	public async Task GetCapturedText_WhenCutKeepsCompleteSequence_RetainsWholeCharacter()
+	{
+		// Arrange: "€" is 3 UTF-8 bytes (E2 82 AC); a 3-byte cap captures exactly one whole euro sign, and
+		// the following bytes are dropped, so the final sequence at the cut is complete.
+		(MemoryStream _, CapturingStream capturing) = CreateStream(maxBytes: 3);
+		await capturing.WriteAsync("€€"u8.ToArray());
+
+		// Act
+		string captured = capturing.GetCapturedText();
+
+		// Assert: the complete euro sign survives untrimmed even though the capture is truncated.
+		Assert.Equal("€", captured);
+		Assert.True(capturing.Truncated);
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.GetCapturedText"/> keeps an invalid UTF-8 lead byte at the
+	/// truncation boundary verbatim, since a byte that announces no valid sequence length is left in place
+	/// rather than guessed at.
+	/// </summary>
+	[Fact]
+	public async Task GetCapturedText_WhenCutEndsInInvalidLead_KeepsBytesVerbatim()
+	{
+		// Arrange: 0xFF is not a valid UTF-8 lead byte. Under a 3-byte cap the capture is "ab" + 0xFF, so
+		// the trim walk finds an invalid lead at the tail and must leave all three bytes in place.
+		(MemoryStream _, CapturingStream capturing) = CreateStream(maxBytes: 3);
+		await capturing.WriteAsync(new byte[] { (byte)'a', (byte)'b', 0xFF, 0xFF });
+
+		// Act
+		string captured = capturing.GetCapturedText();
+
+		// Assert: the two ASCII bytes plus one replacement char for the retained 0xFF prove nothing was
+		// trimmed, and truncation is still flagged.
+		Assert.Equal("ab\uFFFD", captured);
+		Assert.True(capturing.Truncated);
+	}
+
+	/// <summary>
+	/// Verifies that <see cref="CapturingStream.GetCapturedText"/> keeps a run of continuation bytes with
+	/// no preceding lead byte verbatim, since such corrupt input is not a clean cut and must not be
+	/// silently dropped.
+	/// </summary>
+	[Fact]
+	public async Task GetCapturedText_WhenCutIsAllContinuationBytes_KeepsBytesVerbatim()
+	{
+		// Arrange: 0x80/0x81 are continuation bytes (0b10xxxxxx) with no lead. Under a 2-byte cap the whole
+		// capture is continuation bytes, so the trim walk runs off the start and must keep them verbatim.
+		(MemoryStream _, CapturingStream capturing) = CreateStream(maxBytes: 2);
+		await capturing.WriteAsync(new byte[] { 0x80, 0x81, 0x82 });
+
+		// Act
+		string captured = capturing.GetCapturedText();
+
+		// Assert: both dangling continuation bytes are decoded (as replacement chars), proving neither was
+		// trimmed, and truncation is flagged.
+		Assert.Equal("\uFFFD\uFFFD", captured);
+		Assert.True(capturing.Truncated);
 	}
 }
