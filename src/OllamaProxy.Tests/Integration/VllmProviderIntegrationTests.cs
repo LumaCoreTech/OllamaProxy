@@ -35,7 +35,7 @@ public sealed class VllmProviderIntegrationTests
 	private static HttpResponseMessage Json(HttpStatusCode status, string body) => new(status)
 		{ Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
-	private static VllmProvider CreateProvider(ScriptedHandler handler) => new(
+	private static VllmProvider CreateProvider(ScriptedHandler handler, ReasoningEffort? backendDefault = null) => new(
 		new StubHttpClientProvider(handler),
 		new StubCapabilityProber(),
 		TimeProvider.System,
@@ -46,7 +46,10 @@ public sealed class VllmProviderIntegrationTests
 				{
 					[BackendName] = new BackendOptions
 					{
-						BaseUrl = "https://mock.test/v1/", ProviderType = "vllm", ApiKey = "test-key-1234"
+						BaseUrl = "https://mock.test/v1/",
+						ProviderType = "vllm",
+						ApiKey = "test-key-1234",
+						ReasoningEffort = backendDefault
 					}
 				}
 			}),
@@ -301,6 +304,184 @@ public sealed class VllmProviderIntegrationTests
 		JsonObject hamburgResult = messages[3]!.AsObject();
 		Assert.Equal("call_hamburg", hamburgResult["tool_call_id"]!.GetValue<string>());
 		Assert.Equal("9C", hamburgResult["content"]!.GetValue<string>());
+	}
+
+	#endregion
+
+	#region Reasoning dialect (dual-write)
+
+	// vLLM's reasoning adapter is deliberately belt-and-braces: it writes both the portable reasoning_effort
+	// token (modern vLLM) and the explicit chat_template_kwargs.enable_thinking flag (older vLLM and many chat
+	// templates). These tests drive the passthrough /v1 route (ForwardJsonAsync), which routes through the same
+	// ApplyReasoning / HasClientReasoningDirective / StripClientReasoningDirectives seams as the Ollama-native
+	// path, so a pinned effort exercises strip-then-apply while a client directive exercises detection.
+
+	private const string MinimalCompletionBody = """
+	                                             {"id":"c1","model":"qwen3","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+	                                             """;
+
+	private const string ChatCompletionsPath = "chat/completions";
+
+	/// <summary>
+	/// Verifies that a pinned positive effort writes <em>both</em> the portable <c>reasoning_effort</c> token and
+	/// the explicit <c>chat_template_kwargs.enable_thinking</c> flag (set <see langword="true"/>), so reasoning
+	/// works across modern and older vLLM builds alike.
+	/// </summary>
+	[Fact]
+	public async Task ForwardJsonAsync_WhenEffortPinnedPositive_WritesBothReasoningFields()
+	{
+		// Arrange: a bare chat body with no client reasoning directive; the operator pins High.
+		ScriptedHandler handler = new(_ => Json(HttpStatusCode.OK, MinimalCompletionBody));
+		VllmProvider sut = CreateProvider(handler);
+		JsonObject body = new() { ["model"] = "qwen3", ["messages"] = new JsonArray() };
+
+		// Act
+		await sut.ForwardJsonAsync(
+			new BackendContext(BackendName),
+			ChatCompletionsPath,
+			body,
+			pinnedEffort: ReasoningEffort.High,
+			CancellationToken.None);
+
+		// Assert: both the portable token and the explicit template flag are written.
+		JsonObject sent = JsonNode.Parse(handler.LastRequestBody!)!.AsObject();
+		Assert.Equal("high", (string?)sent["reasoning_effort"]);
+		var kwargs = Assert.IsType<JsonObject>(sent["chat_template_kwargs"]);
+		Assert.True((bool)kwargs["enable_thinking"]!);
+	}
+
+	/// <summary>
+	/// Verifies that a pinned <see cref="ReasoningEffort.None"/> writes the <c>none</c> token and sets the
+	/// explicit <c>enable_thinking</c> flag to <see langword="false"/>, so templates that only read the kwarg
+	/// also suppress deliberation.
+	/// </summary>
+	[Fact]
+	public async Task ForwardJsonAsync_WhenEffortPinnedNone_DisablesThinkingFlag()
+	{
+		// Arrange
+		ScriptedHandler handler = new(_ => Json(HttpStatusCode.OK, MinimalCompletionBody));
+		VllmProvider sut = CreateProvider(handler);
+		JsonObject body = new() { ["model"] = "qwen3", ["messages"] = new JsonArray() };
+
+		// Act
+		await sut.ForwardJsonAsync(
+			new BackendContext(BackendName),
+			ChatCompletionsPath,
+			body,
+			pinnedEffort: ReasoningEffort.None,
+			CancellationToken.None);
+
+		// Assert: None turns the explicit flag off while still writing the portable token.
+		JsonObject sent = JsonNode.Parse(handler.LastRequestBody!)!.AsObject();
+		Assert.Equal("none", (string?)sent["reasoning_effort"]);
+		var kwargs = Assert.IsType<JsonObject>(sent["chat_template_kwargs"]);
+		Assert.False((bool)kwargs["enable_thinking"]!);
+	}
+
+	/// <summary>
+	/// Verifies that a pinned effort first strips a conflicting client directive — both the portable
+	/// <c>reasoning_effort</c> and the explicit <c>chat_template_kwargs.enable_thinking</c> — before writing the
+	/// operator's known-safe level, so the client's <c>low</c> cannot survive alongside the pinned <c>high</c>.
+	/// </summary>
+	[Fact]
+	public async Task ForwardJsonAsync_WhenPinnedOverClientDirective_StripsThenRewritesBothFields()
+	{
+		// Arrange: the client asked for low via both fields; the pin must override both.
+		ScriptedHandler handler = new(_ => Json(HttpStatusCode.OK, MinimalCompletionBody));
+		VllmProvider sut = CreateProvider(handler);
+		JsonObject body = new()
+		{
+			["model"] = "qwen3",
+			["messages"] = new JsonArray(),
+			["reasoning_effort"] = "low",
+			["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false }
+		};
+
+		// Act
+		await sut.ForwardJsonAsync(
+			new BackendContext(BackendName),
+			ChatCompletionsPath,
+			body,
+			pinnedEffort: ReasoningEffort.High,
+			CancellationToken.None);
+
+		// Assert: the client's low is gone; the pinned high is written to both fields.
+		JsonObject sent = JsonNode.Parse(handler.LastRequestBody!)!.AsObject();
+		Assert.Equal("high", (string?)sent["reasoning_effort"]);
+		var kwargs = Assert.IsType<JsonObject>(sent["chat_template_kwargs"]);
+		Assert.True((bool)kwargs["enable_thinking"]!);
+	}
+
+	/// <summary>
+	/// Verifies that stripping the client's <c>enable_thinking</c> preserves any sibling
+	/// <c>chat_template_kwargs</c> the client set, since only the reasoning switch is a directive — the rest of
+	/// the kwargs bag is a legitimate template payload that must survive to the backend.
+	/// </summary>
+	[Fact]
+	public async Task ForwardJsonAsync_WhenClientKwargsHaveSiblings_StripPreservesSiblings()
+	{
+		// Arrange: the client's template kwargs carry both the reasoning switch and an unrelated custom key.
+		ScriptedHandler handler = new(_ => Json(HttpStatusCode.OK, MinimalCompletionBody));
+		VllmProvider sut = CreateProvider(handler);
+		JsonObject body = new()
+		{
+			["model"] = "qwen3",
+			["messages"] = new JsonArray(),
+			["chat_template_kwargs"] = new JsonObject
+			{
+				["enable_thinking"] = false,
+				["custom_flag"] = "keep-me"
+			}
+		};
+
+		// Act: pinning Medium strips enable_thinking (leaving the sibling) and rewrites the reasoning fields.
+		await sut.ForwardJsonAsync(
+			new BackendContext(BackendName),
+			ChatCompletionsPath,
+			body,
+			pinnedEffort: ReasoningEffort.Medium,
+			CancellationToken.None);
+
+		// Assert: the sibling key survives, and the pinned effort is re-applied to both reasoning fields.
+		JsonObject sent = JsonNode.Parse(handler.LastRequestBody!)!.AsObject();
+		Assert.Equal("medium", (string?)sent["reasoning_effort"]);
+		var kwargs = Assert.IsType<JsonObject>(sent["chat_template_kwargs"]);
+		Assert.Equal("keep-me", (string?)kwargs["custom_flag"]);
+		Assert.True((bool)kwargs["enable_thinking"]!);
+	}
+
+	/// <summary>
+	/// Verifies that a client that expresses reasoning <em>only</em> through vLLM's
+	/// <c>chat_template_kwargs.enable_thinking</c> kwarg (no portable <c>reasoning_effort</c>) is recognized as
+	/// having already chosen, so the backend default does not override it and no <c>reasoning_effort</c> token is
+	/// injected.
+	/// </summary>
+	[Fact]
+	public async Task ForwardJsonAsync_WhenClientUsesKwargOnly_BackendDefaultDoesNotOverride()
+	{
+		// Arrange: the backend defaults to High, but the client already opted in via the kwarg alone.
+		ScriptedHandler handler = new(_ => Json(HttpStatusCode.OK, MinimalCompletionBody));
+		VllmProvider sut = CreateProvider(handler, backendDefault: ReasoningEffort.High);
+		JsonObject body = new()
+		{
+			["model"] = "qwen3",
+			["messages"] = new JsonArray(),
+			["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = true }
+		};
+
+		// Act
+		await sut.ForwardJsonAsync(
+			new BackendContext(BackendName),
+			ChatCompletionsPath,
+			body,
+			pinnedEffort: null,
+			CancellationToken.None);
+
+		// Assert: the client's kwarg directive wins, so the backend default injects no portable token.
+		JsonObject sent = JsonNode.Parse(handler.LastRequestBody!)!.AsObject();
+		Assert.False(sent.ContainsKey("reasoning_effort"));
+		var kwargs = Assert.IsType<JsonObject>(sent["chat_template_kwargs"]);
+		Assert.True((bool)kwargs["enable_thinking"]!);
 	}
 
 	#endregion
